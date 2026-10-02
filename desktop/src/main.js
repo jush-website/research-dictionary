@@ -657,15 +657,147 @@ function wireEvents() {
   }
 }
 
+async function saveEditor(event) {
+  event.preventDefault();
+  if (!currentUser) {
+    showToast('請先登入才能新增或修改詞彙。', true);
+    return;
+  }
+
+  const wasEditing = !!editingTerm;
+  const original = editingTerm;
+  const data = new FormData(event.currentTarget);
+  const payload = {
+    term_en: String(data.get('term_en') || '').trim(),
+    term_zh: String(data.get('term_zh') || '').trim(),
+    category: String(data.get('category') || '').trim() || '未分類',
+    status: String(data.get('status') || 'pending'),
+    definition: String(data.get('definition') || '').trim(),
+    simple_explanation: String(data.get('simple_explanation') || '').trim(),
+    example: String(data.get('example') || '').trim(),
+    research_note: String(data.get('research_note') || '').trim(),
+    source: String(data.get('source') || '').trim(),
+    sourceType: String(data.get('sourceType') || '').trim(),
+    sourceDetail: String(data.get('sourceDetail') || '').trim(),
+    is_core: data.get('is_core') === 'on',
+    is_shared: data.get('is_shared') === 'on'
+  };
+
+  if (!payload.term_en || !payload.term_zh || !payload.definition || !payload.simple_explanation) {
+    showToast('英文名稱、中文名稱、正式定義與白話解釋為必填。', true);
+    return;
+  }
+
+  const duplicate = terms.find((term) =>
+    term.id !== original?.id &&
+    (normalize(term.term_en) === normalize(payload.term_en) || normalize(term.term_zh) === normalize(payload.term_zh))
+  );
+  if (duplicate) {
+    showToast('已有相同詞彙：' + duplicate.term_en + '｜' + duplicate.term_zh, true);
+    return;
+  }
+
+  try {
+    const uid = currentUser.uid;
+    const isAdminEditingOther = original && original.createdBy !== uid && uid === ADMIN_UID && original._origin === 'public';
+
+    if (isAdminEditingOther) {
+      await updateDoc(doc(db, COLLECTION_NAME, original.id), {
+        ...payload,
+        is_shared: true,
+        updatedAt: serverTimestamp()
+      });
+    } else {
+      if (original && original.createdBy && original.createdBy !== uid) {
+        throw new Error('你只能修改自己建立的詞彙');
+      }
+
+      const termId = original?.id || doc(collection(db, PRIVATE_ROOT, uid, 'terms')).id;
+      const personalRef = doc(db, PRIVATE_ROOT, uid, 'terms', termId);
+      const publicRef = doc(db, COLLECTION_NAME, termId);
+      const createdAt = original?.createdAt || serverTimestamp();
+      const ownerData = {
+        createdBy: uid,
+        createdByName: currentUser.displayName || '',
+        createdByEmail: currentUser.email || ''
+      };
+      const fullPayload = {
+        ...payload,
+        ...ownerData,
+        createdAt,
+        updatedAt: serverTimestamp()
+      };
+
+      await setDoc(personalRef, fullPayload, { merge: true });
+
+      if (payload.is_shared) {
+        await setDoc(publicRef, { ...fullPayload, is_shared: true }, { merge: true });
+      } else {
+        const publicCopy = publicTerms.find((term) => term.id === termId && term.createdBy === uid);
+        if (publicCopy) await deleteDoc(publicRef);
+      }
+    }
+
+    editorOpen = false;
+    editingTerm = null;
+    showToast(wasEditing ? '詞彙已更新' : '詞彙已新增');
+    await loadTerms(true);
+  } catch (error) {
+    console.error(error);
+    showToast('儲存失敗：' + (error?.message || error), true);
+  }
+}
+
+async function deleteTerm(term) {
+  if (!canEdit(term)) {
+    showToast('你只能刪除自己建立的詞彙。', true);
+    return;
+  }
+  if (!confirm('確定刪除「' + term.term_en + '｜' + term.term_zh + '」？')) return;
+
+  try {
+    const uid = currentUser.uid;
+    if (term.createdBy !== uid && uid === ADMIN_UID && term._origin === 'public') {
+      await deleteDoc(doc(db, COLLECTION_NAME, term.id));
+    } else {
+      await deleteDoc(doc(db, PRIVATE_ROOT, uid, 'terms', term.id)).catch(() => {});
+      const publicCopy = publicTerms.find((item) => item.id === term.id && item.createdBy === uid);
+      if (publicCopy) await deleteDoc(doc(db, COLLECTION_NAME, term.id));
+    }
+    selectedTerm = null;
+    showToast('詞彙已刪除');
+    await loadTerms(true);
+  } catch (error) {
+    showToast('刪除失敗：' + (error?.message || error), true);
+  }
+}
+
 async function loadTerms(force = false) {
   loading = true;
   sourceState = 'loading';
   if (force) selectedTerm = null;
   render();
   try {
-    const snap = await getDocs(collection(db, COLLECTION_NAME));
-    terms = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-    localStorage.setItem(CACHE_KEY, JSON.stringify(terms));
+    const publicSnap = await getDocs(collection(db, COLLECTION_NAME));
+    publicTerms = publicSnap.docs.map((d) => ({ id: d.id, ...d.data(), is_shared: true, _origin: 'public' }));
+
+    if (currentUser) {
+      try {
+        const privateSnap = await getDocs(collection(db, PRIVATE_ROOT, currentUser.uid, 'terms'));
+        privateTerms = privateSnap.docs.map((d) => ({ id: d.id, ...d.data(), _origin: 'private' }));
+      } catch (privateError) {
+        console.warn('Private dictionary unavailable:', privateError);
+        privateTerms = [];
+        const message = String(privateError?.message || privateError);
+        if (/permission|permissions|insufficient/i.test(message)) {
+          showToast('私人辭典需要發布新版 Firestore Security Rules。', true);
+        }
+      }
+    } else {
+      privateTerms = [];
+    }
+
+    mergeTerms();
     sourceState = 'online';
   } catch (error) {
     console.error('Firestore load failed:', error);
