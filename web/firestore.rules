@@ -27,11 +27,22 @@ service cloud.firestore {
     }
 
     // 每位使用者自己的私人辭典。
-    // 只有本人可讀寫；勾選共享時，前端會同步一份到 research_dictionary。
     match /user_research_dictionary/{uid}/terms/{termId} {
-      allow read, create, update, delete: if signedIn()
+      allow read: if signedIn()
+        && request.auth.uid == uid;
+
+      allow create: if signedIn()
         && request.auth.uid == uid
         && request.resource.data.createdBy == uid;
+
+      allow update: if signedIn()
+        && request.auth.uid == uid
+        && resource.data.createdBy == uid
+        && request.resource.data.createdBy == uid;
+
+      allow delete: if signedIn()
+        && request.auth.uid == uid
+        && resource.data.createdBy == uid;
     }
 
     // 桌面版 Google 登入一次性接力文件。
