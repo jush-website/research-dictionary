@@ -1025,6 +1025,8 @@ async function minimizeWindow() {
 async function hideWindow() {
   try {
     settingsOpen = false;
+    editorOpen = false;
+    editingTerm = null;
     capturingShortcut = null;
     await appWindow.hide();
   } catch (error) {
@@ -1050,7 +1052,7 @@ async function openWebsite() {
 }
 
 async function lookupSelectedText() {
-  if (settingsOpen || capturingShortcut) return;
+  if (settingsOpen || editorOpen || capturingShortcut) return;
   try {
     const captured = String(await invoke('capture_selected_text') || '').trim();
     await showSearchWindow({ focusSearch: false });
@@ -1087,10 +1089,10 @@ async function registerHotkeys(config = shortcutConfig) {
 
   try {
     await register(config.lookup, (event) => {
-      if (event.state === 'Released' && !settingsOpen && !capturingShortcut) lookupSelectedText();
+      if (event.state === 'Released' && !settingsOpen && !editorOpen && !capturingShortcut) lookupSelectedText();
     });
     await register(config.search, async (event) => {
-      if (event.state !== 'Released' || settingsOpen || capturingShortcut) return;
+      if (event.state !== 'Released' || settingsOpen || editorOpen || capturingShortcut) return;
       searchText = '';
       selectedTerm = null;
       render();
@@ -1210,18 +1212,37 @@ window.addEventListener('keydown', (e) => {
   }
 
   if (e.key === 'Escape') {
-    if (settingsOpen) closeSettings();
-    else hideWindow();
+    if (editorOpen) {
+      editorOpen = false;
+      editingTerm = null;
+      render();
+    } else if (settingsOpen) {
+      closeSettings();
+    } else if (selectedTerm) {
+      selectedTerm = null;
+      render();
+    } else {
+      hideWindow();
+    }
   }
 });
 
+onAuthStateChanged(auth, async (user) => {
+  currentUser = user;
+  if (!user) privateTerms = [];
+  await loadTerms(true);
+});
+
 window.addEventListener('DOMContentLoaded', async () => {
+  try { appVersion = await getVersion(); } catch {}
   render();
-  loadTerms();
   try {
     await registerHotkeys(shortcutConfig);
   } catch (error) {
     console.error('Global shortcut registration failed:', error);
   }
   render();
+
+  window.setTimeout(() => checkForUpdates({ manual: false }), 5000);
+  window.setInterval(() => checkForUpdates({ manual: false }), 4 * 60 * 60 * 1000);
 });
