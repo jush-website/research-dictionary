@@ -720,6 +720,36 @@ function wireEvents() {
     setTimeout(() => document.querySelector('#searchInput')?.focus(), 0);
   });
 
+  document.querySelector('#categoryFilter')?.addEventListener('change', (event) => {
+    categoryFilter = event.target.value;
+    selectedTerm = null;
+    render();
+  });
+  document.querySelector('#statusFilter')?.addEventListener('change', (event) => {
+    statusFilter = event.target.value;
+    selectedTerm = null;
+    render();
+  });
+  document.querySelector('#scopeFilter')?.addEventListener('change', (event) => {
+    scopeFilter = event.target.value;
+    selectedTerm = null;
+    render();
+  });
+
+  document.querySelector('#loginBtn')?.addEventListener('click', startDesktopLogin);
+  document.querySelector('#cancelLoginBtn')?.addEventListener('click', cancelDesktopLogin);
+  document.querySelector('#logoutBtn')?.addEventListener('click', logoutDesktop);
+  document.querySelector('#addTermBtn')?.addEventListener('click', () => {
+    editingTerm = null;
+    editorOpen = true;
+    render();
+  });
+  document.querySelector('#emptyAddBtn')?.addEventListener('click', () => {
+    editingTerm = null;
+    editorOpen = true;
+    render();
+  });
+
   const titlebar = document.querySelector('#titlebar');
   titlebar?.addEventListener('mousedown', async (e) => {
     if (e.button !== 0 || e.target.closest('button')) return;
@@ -738,14 +768,53 @@ function wireEvents() {
     });
   }
   document.querySelector('#themeBtn')?.addEventListener('click', toggleTheme);
-  document.querySelector('#backBtn')?.addEventListener('click', () => { selectedTerm = null; render(); setTimeout(() => document.querySelector('#searchInput')?.focus(), 0); });
+  document.querySelector('#backBtn')?.addEventListener('click', () => {
+    selectedTerm = null;
+    render();
+    setTimeout(() => document.querySelector('#searchInput')?.focus(), 0);
+  });
   document.querySelector('#refreshBtn')?.addEventListener('click', () => loadTerms(true));
   document.querySelector('#websiteBtn')?.addEventListener('click', openWebsite);
-  document.querySelector('#emptyWebsiteBtn')?.addEventListener('click', openWebsite);
   document.querySelectorAll('[data-term-id]').forEach((el) => el.addEventListener('click', () => {
     selectedTerm = terms.find((t) => t.id === el.dataset.termId) || null;
     render();
   }));
+  document.querySelectorAll('[data-edit-term]').forEach((el) => el.addEventListener('click', () => {
+    editingTerm = terms.find((t) => t.id === el.dataset.editTerm) || null;
+    editorOpen = true;
+    render();
+  }));
+  document.querySelectorAll('[data-delete-term]').forEach((el) => el.addEventListener('click', () => {
+    const term = terms.find((t) => t.id === el.dataset.deleteTerm);
+    if (term) deleteTerm(term);
+  }));
+  document.querySelector('#detailEditBtn')?.addEventListener('click', () => {
+    editingTerm = selectedTerm;
+    editorOpen = true;
+    render();
+  });
+  document.querySelector('#detailDeleteBtn')?.addEventListener('click', () => {
+    if (selectedTerm) deleteTerm(selectedTerm);
+  });
+
+  document.querySelector('#editorCloseBtn')?.addEventListener('click', () => {
+    editorOpen = false;
+    editingTerm = null;
+    render();
+  });
+  document.querySelector('#editorCancelBtn')?.addEventListener('click', () => {
+    editorOpen = false;
+    editingTerm = null;
+    render();
+  });
+  document.querySelector('#editorBackdrop')?.addEventListener('mousedown', (event) => {
+    if (event.target.id === 'editorBackdrop') {
+      editorOpen = false;
+      editingTerm = null;
+      render();
+    }
+  });
+  document.querySelector('#termEditorForm')?.addEventListener('submit', saveEditor);
 
   document.querySelector('#settingsCloseBtn')?.addEventListener('click', closeSettings);
   document.querySelector('#cancelSettingsBtn')?.addEventListener('click', closeSettings);
@@ -762,6 +831,12 @@ function wireEvents() {
     render();
   });
   document.querySelector('#saveShortcutBtn')?.addEventListener('click', saveShortcutSettings);
+  document.querySelector('#autoUpdateCheck')?.addEventListener('change', (event) => {
+    autoUpdateCheck = event.target.checked;
+    localStorage.setItem(UPDATE_CHECK_KEY, String(autoUpdateCheck));
+  });
+  document.querySelector('#checkUpdateBtn')?.addEventListener('click', () => checkForUpdates({ manual: true }));
+  document.querySelector('#installUpdateBtn')?.addEventListener('click', installAvailableUpdate);
 
   const auto = document.querySelector('#autostartToggle');
   if (auto) {
