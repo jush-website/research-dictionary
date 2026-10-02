@@ -404,6 +404,61 @@ async function installAvailableUpdate() {
   }
 }
 
+
+function renderFilters() {
+  const cats = categories();
+  const statuses = [...new Set(terms.map((t) => t.status).filter(Boolean))];
+  return `
+    <div class="filter-row">
+      <select id="categoryFilter" aria-label="分類篩選">
+        <option value="">所有分類</option>
+        ${cats.map((cat) => `<option value="${escapeHtml(cat)}" ${categoryFilter === cat ? 'selected' : ''}>${escapeHtml(cat)}</option>`).join('')}
+      </select>
+      <select id="statusFilter" aria-label="狀態篩選">
+        <option value="">所有狀態</option>
+        ${statuses.map((status) => {
+          const [, label] = statusInfo(status);
+          return `<option value="${escapeHtml(status)}" ${statusFilter === status ? 'selected' : ''}>${escapeHtml(label)}</option>`;
+        }).join('')}
+      </select>
+      <select id="scopeFilter" aria-label="可見範圍篩選">
+        <option value="all" ${scopeFilter === 'all' ? 'selected' : ''}>全部可見詞彙</option>
+        <option value="shared" ${scopeFilter === 'shared' ? 'selected' : ''}>共享詞彙</option>
+        ${currentUser ? `<option value="mine" ${scopeFilter === 'mine' ? 'selected' : ''}>我的詞彙</option><option value="private" ${scopeFilter === 'private' ? 'selected' : ''}>我的私人詞彙</option>` : ''}
+      </select>
+    </div>`;
+}
+
+function renderAccountBar() {
+  if (currentUser) {
+    const name = currentUser.displayName || currentUser.email || '已登入';
+    const initial = (name.trim()[0] || 'U').toUpperCase();
+    return `
+      <div class="account-bar signed-in">
+        <div class="account-user">
+          <span class="avatar">${escapeHtml(initial)}</span>
+          <div><strong>${escapeHtml(name)}</strong><span>私人詞彙會同步到此帳號</span></div>
+        </div>
+        <div class="account-actions">
+          <button class="primary-btn compact" id="addTermBtn">＋ 新增詞彙</button>
+          <button class="text-btn" id="logoutBtn">登出</button>
+        </div>
+      </div>`;
+  }
+  return `
+    <div class="account-bar">
+      <div><strong>登入後可建立自己的研究辭典</strong><span>${loginPending ? escapeHtml(loginMessage) : '可新增、修改私人詞彙，並自行決定是否共享。'}</span></div>
+      <div class="account-actions">${loginPending ? '<button class="secondary-btn" id="cancelLoginBtn">取消</button>' : '<button class="primary-btn compact" id="loginBtn">使用 Google 登入</button>'}</div>
+    </div>`;
+}
+
+function updateFooterTemplate() {
+  if (updateInstalling) return '<button class="update-btn" disabled>正在更新…</button>';
+  if (updateInfo) return `<button class="update-btn" id="installUpdateBtn">更新至 v${escapeHtml(updateInfo.version)}</button>`;
+  if (updateChecking) return '<button class="text-btn" disabled>檢查更新中…</button>';
+  return `<button class="text-btn" id="checkUpdateBtn">檢查更新${appVersion !== '0.0.0' ? ` · v${escapeHtml(appVersion)}` : ''}</button>`;
+}
+
 function render() {
   const results = getResults();
   const current = selectedTerm;
@@ -415,14 +470,11 @@ function render() {
       <header class="titlebar" id="titlebar">
         <div class="brand">
           <div class="logo">RD</div>
-          <div>
-            <strong>Research Dictionary</strong>
-            <span>Windows 快速研究辭典</span>
-          </div>
+          <div><strong>Research Dictionary</strong><span>Windows 研究辭典</span></div>
         </div>
         <div class="window-actions">
           <button class="icon-button theme-button" id="themeBtn" title="切換明暗模式" aria-label="切換明暗模式">${themeIcon()}</button>
-          <button class="icon-button settings-icon" id="settingsBtn" title="設定快捷鍵" aria-label="設定快捷鍵">⚙</button>
+          <button class="icon-button settings-icon" id="settingsBtn" title="設定" aria-label="設定">⚙</button>
           <button class="icon-button" id="minimizeBtn" title="最小化" aria-label="最小化">—</button>
           <button class="icon-button close-button" id="closeBtn" title="關閉視窗（保留在系統匣）" aria-label="關閉視窗">×</button>
         </div>
@@ -431,7 +483,7 @@ function render() {
       <section class="search-section">
         <div class="search-box">
           <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"></circle><path d="m16 16 4 4"></path></svg>
-          <input id="searchInput" autocomplete="off" spellcheck="false" placeholder="搜尋中英文詞彙、定義、來源…" value="${escapeHtml(searchText)}" />
+          <input id="searchInput" autocomplete="off" spellcheck="false" placeholder="搜尋詞彙、定義、分類、來源…" value="${escapeHtml(searchText)}" />
           ${searchText ? '<button id="clearBtn" class="clear-btn" aria-label="清除搜尋">×</button>' : `<kbd>${escapeHtml(shortcutLabel(shortcutConfig.search))}</kbd>`}
         </div>
         <div class="helper-row">
@@ -441,19 +493,23 @@ function render() {
             <span class="sync ${sourceState}"><i></i>${sourceLabel}</span>
           </div>
         </div>
+        ${renderFilters()}
+        ${renderAccountBar()}
       </section>
 
       ${current ? detailTemplate(current) : listTemplate(results)}
 
       <footer class="footer">
         <label class="autostart"><input id="autostartToggle" type="checkbox" /> Windows 開機時啟動</label>
-        <div>
+        <div class="footer-actions">
+          ${updateFooterTemplate()}
           <button class="text-btn" id="refreshBtn">重新同步</button>
-          <button class="text-btn" id="websiteBtn">開啟網站</button>
+          <button class="text-btn" id="websiteBtn">網站</button>
         </div>
       </footer>
 
       ${settingsOpen ? settingsTemplate() : ''}
+      ${editorOpen ? editorTemplate() : ''}
       <div id="toast" class="toast" aria-live="polite"></div>
     </main>
   `;
@@ -463,26 +519,43 @@ function render() {
 
 function listTemplate(results) {
   if (loading) {
-    return `<section class="content"><div class="empty"><div class="spinner"></div><strong>正在讀取研究辭典</strong><span>第一次啟動需要連線至 Firestore。</span></div></section>`;
+    return `<section class="content"><div class="empty"><div class="spinner"></div><strong>正在讀取研究辭典</strong><span>同步共享詞彙與你的私人詞彙。</span></div></section>`;
   }
   if (!results.length) {
-    return `<section class="content"><div class="empty"><div class="empty-icon">?</div><strong>找不到「${escapeHtml(searchText)}」</strong><span>目前辭典尚無完全符合的詞彙，可嘗試縮短關鍵字或開啟網站新增。</span><button class="primary-btn" id="emptyWebsiteBtn">前往研究辭典</button></div></section>`;
+    return `<section class="content"><div class="empty"><div class="empty-icon">?</div><strong>找不到符合條件的詞彙</strong><span>${searchText ? `沒有找到「${escapeHtml(searchText)}」` : '請調整分類、狀態或顯示範圍。'}</span>${currentUser ? '<button class="primary-btn" id="emptyAddBtn">＋ 新增詞彙</button>' : ''}</div></section>`;
   }
 
   return `
     <section class="content">
-      <div class="result-head"><strong>${searchText ? `找到 ${results.length} 個結果` : '常用與核心詞彙'}</strong><span>${terms.length} 個詞彙已載入</span></div>
+      <div class="result-head"><strong>${searchText ? `找到 ${results.length} 個結果` : `顯示 ${results.length} 個詞彙`}</strong><span>${terms.length} 個可用詞彙</span></div>
       <div class="term-list">
         ${results.map((term, index) => {
           const [statusClass, statusLabel] = statusInfo(term.status);
-          return `<button class="term-card term-enter" style="--delay:${Math.min(index, 12) * 24}ms" data-term-id="${escapeHtml(term.id)}">
-            <div class="term-main">
-              <div class="term-title"><strong>${escapeHtml(term.term_en || '未命名')}</strong>${term.is_core ? '<span class="core">核心</span>' : ''}</div>
-              <div class="term-zh">${escapeHtml(term.term_zh || '')}</div>
-              <p>${escapeHtml(term.simple_explanation || term.definition || '尚無說明')}</p>
-            </div>
-            <div class="term-meta"><span>${escapeHtml(term.category || '未分類')}</span><span class="status ${statusClass}">${escapeHtml(statusLabel)}</span></div>
-          </button>`;
+          const [visibilityClass, visibilityText] = visibilityInfo(term);
+          return `
+            <article class="term-card term-enter" style="--delay:${Math.min(index, 14) * 20}ms">
+              <button class="term-open" data-term-id="${escapeHtml(term.id)}">
+                <div class="term-card-head">
+                  <div class="term-main">
+                    <div class="term-title"><strong>${escapeHtml(term.term_en || '未命名')}</strong>${term.is_core ? '<span class="core">核心</span>' : ''}</div>
+                    <div class="term-zh">${escapeHtml(term.term_zh || '')}</div>
+                  </div>
+                  <div class="term-badges">
+                    <span class="visibility ${visibilityClass}">${visibilityText}</span>
+                    <span class="status ${statusClass}">${escapeHtml(statusLabel)}</span>
+                  </div>
+                </div>
+                <div class="meta-line">
+                  <span>${escapeHtml(term.category || '未分類')}</span>
+                  ${term.sourceType ? `<span>${escapeHtml(term.sourceType)}</span>` : ''}
+                  <span>${escapeHtml(ownerLabel(term))}</span>
+                </div>
+                <p class="term-simple">${escapeHtml(term.simple_explanation || '尚無白話解釋')}</p>
+                <p class="term-definition">${escapeHtml(term.definition || '')}</p>
+                ${term.source ? `<div class="source-preview">來源：${escapeHtml(term.source)}</div>` : ''}
+              </button>
+              ${canEdit(term) ? `<div class="card-actions"><button class="small-btn" data-edit-term="${escapeHtml(term.id)}">編輯</button><button class="small-btn danger" data-delete-term="${escapeHtml(term.id)}">刪除</button></div>` : ''}
+            </article>`;
         }).join('')}
       </div>
     </section>`;
@@ -490,15 +563,19 @@ function listTemplate(results) {
 
 function detailTemplate(term) {
   const [statusClass, statusLabel] = statusInfo(term.status);
+  const [visibilityClass, visibilityText] = visibilityInfo(term);
   return `
     <section class="content detail-view detail-enter">
-      <button class="back-btn" id="backBtn">← 返回搜尋結果</button>
+      <div class="detail-toolbar">
+        <button class="back-btn" id="backBtn">← 返回</button>
+        ${canEdit(term) ? '<div><button class="small-btn" id="detailEditBtn">編輯</button><button class="small-btn danger" id="detailDeleteBtn">刪除</button></div>' : ''}
+      </div>
       <div class="detail-card">
         <div class="detail-heading">
           <div><h1>${escapeHtml(term.term_en || '')}</h1><h2>${escapeHtml(term.term_zh || '')}</h2></div>
-          <div class="detail-badges">${term.is_core ? '<span class="core">核心</span>' : ''}<span class="status ${statusClass}">${escapeHtml(statusLabel)}</span></div>
+          <div class="detail-badges">${term.is_core ? '<span class="core">核心</span>' : ''}<span class="visibility ${visibilityClass}">${visibilityText}</span><span class="status ${statusClass}">${escapeHtml(statusLabel)}</span></div>
         </div>
-        <div class="category-line">${escapeHtml(term.category || '未分類')}</div>
+        <div class="detail-meta"><span>${escapeHtml(term.category || '未分類')}</span><span>${escapeHtml(ownerLabel(term))}</span></div>
         ${detailBlock('正式定義', term.definition)}
         ${detailBlock('白話解釋', term.simple_explanation, true)}
         ${detailBlock('例子', term.example)}
@@ -517,56 +594,99 @@ function detailBlock(title, content, emphasized = false) {
   return `<div class="detail-block ${emphasized ? 'emphasized' : ''}"><h3>${escapeHtml(title)}</h3><p>${escapeHtml(content)}</p></div>`;
 }
 
+function editorTemplate() {
+  const term = editingTerm || {};
+  const isShared = editingTerm ? term.is_shared !== false : false;
+  const cats = categories();
+
+  return `
+    <div class="modal-backdrop editor-enter" id="editorBackdrop">
+      <section class="editor-panel panel-enter" role="dialog" aria-modal="true" aria-labelledby="editorTitle">
+        <div class="settings-head">
+          <div><span class="settings-eyebrow">${editingTerm ? 'EDIT TERM' : 'NEW TERM'}</span><h2 id="editorTitle">${editingTerm ? '編輯研究詞彙' : '新增研究詞彙'}</h2></div>
+          <button class="icon-button" id="editorCloseBtn" aria-label="關閉">×</button>
+        </div>
+        <form id="termEditorForm">
+          <div class="form-grid two">
+            <label>英文名稱<input name="term_en" required value="${escapeHtml(term.term_en || '')}" placeholder="例如：Retrieval-Augmented Generation"></label>
+            <label>中文名稱<input name="term_zh" required value="${escapeHtml(term.term_zh || '')}" placeholder="例如：檢索增強生成"></label>
+          </div>
+          <div class="form-grid two">
+            <label>分類
+              <input name="category" list="desktopCategoryList" value="${escapeHtml(term.category || '')}" placeholder="可輸入任何研究分類">
+              <datalist id="desktopCategoryList">${cats.map((cat) => `<option value="${escapeHtml(cat)}"></option>`).join('')}</datalist>
+            </label>
+            <label>狀態
+              <select name="status">
+                ${[
+                  ['verified','已驗證'],
+                  ['pending','待確認'],
+                  ['candidate','候選定義'],
+                  ['confirmed','已確認（舊）'],
+                  ['general','一般詞彙（舊）']
+                ].map(([value,label]) => `<option value="${value}" ${(term.status || 'pending') === value ? 'selected' : ''}>${label}</option>`).join('')}
+              </select>
+            </label>
+          </div>
+          <label>正式定義<textarea name="definition" required rows="4">${escapeHtml(term.definition || '')}</textarea></label>
+          <label>白話解釋<textarea name="simple_explanation" required rows="3">${escapeHtml(term.simple_explanation || '')}</textarea></label>
+          <label>例子<textarea name="example" rows="3">${escapeHtml(term.example || '')}</textarea></label>
+          <label>與研究的關係<textarea name="research_note" rows="3">${escapeHtml(term.research_note || '')}</textarea></label>
+          <div class="form-grid two">
+            <label>來源<input name="source" value="${escapeHtml(term.source || '')}" placeholder="論文、計畫書、文件…"></label>
+            <label>來源類型<input name="sourceType" value="${escapeHtml(term.sourceType || '')}" placeholder="Paper / Hou Thesis / Project Plan…"></label>
+          </div>
+          <label>來源位置<input name="sourceDetail" value="${escapeHtml(term.sourceDetail || '')}" placeholder="章節、頁碼；不確定可留空"></label>
+          <div class="editor-checks">
+            <label class="check-row"><input name="is_core" type="checkbox" ${term.is_core ? 'checked' : ''}><span>核心詞彙</span></label>
+            <label class="check-row share-check"><input name="is_shared" type="checkbox" ${isShared ? 'checked' : ''}><span><strong>共享給其他使用者</strong><small>未勾選時只有你的帳號看得到。</small></span></label>
+          </div>
+          <div class="modal-actions">
+            <button type="button" class="secondary-btn" id="editorCancelBtn">取消</button>
+            <button type="submit" class="primary-btn compact">${editingTerm ? '儲存修改' : '新增詞彙'}</button>
+          </div>
+        </form>
+      </section>
+    </div>`;
+}
+
 function settingsTemplate() {
   const [hotkeyClass, hotkeyLabel] = hotkeyStatusLabel();
   return `
-    <div class="settings-backdrop settings-enter" id="settingsBackdrop">
+    <div class="modal-backdrop settings-enter" id="settingsBackdrop">
       <section class="settings-panel panel-enter" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
         <div class="settings-head">
-          <div>
-            <span class="settings-eyebrow">SHORTCUT SETTINGS</span>
-            <h2 id="settingsTitle">快捷鍵設定</h2>
-          </div>
+          <div><span class="settings-eyebrow">APP SETTINGS</span><h2 id="settingsTitle">桌面程式設定</h2></div>
           <button class="icon-button" id="settingsCloseBtn" aria-label="關閉設定">×</button>
         </div>
 
-        <p class="settings-note">按「錄製」後直接按下你要的按鍵組合。建議至少搭配 Ctrl、Alt 或 Shift，以避免與一般輸入衝突。</p>
+        <p class="settings-note">設定會儲存在這台電腦，不會改動 Firestore 詞彙資料。</p>
 
         <div class="font-scale-setting">
-          <div>
-            <strong>字體大小</strong>
-            <span>拖曳拉霸即可立即調整，設定會自動記住。</span>
-          </div>
-          <div class="font-scale-editor">
-            <input id="fontScaleSlider" type="range" min="90" max="150" step="5" value="${fontScale}" aria-label="調整字體大小" />
-            <output id="fontScaleValue">${fontScale}%</output>
-          </div>
+          <div><strong>字體大小</strong><span>立即調整整個桌面辭典的文字比例。</span></div>
+          <div class="font-scale-editor"><input id="fontScaleSlider" type="range" min="90" max="150" step="5" value="${fontScale}"><output id="fontScaleValue">${fontScale}%</output></div>
         </div>
 
         <div class="shortcut-setting-row">
           <div><strong>查詢目前反白文字</strong><span>選取 PDF／網頁文字後呼叫辭典</span></div>
-          <div class="shortcut-editor">
-            <kbd>${escapeHtml(shortcutLabel(shortcutDraft.lookup))}</kbd>
-            <button class="small-btn ${capturingShortcut === 'lookup' ? 'recording' : ''}" data-capture-shortcut="lookup">${capturingShortcut === 'lookup' ? '請按快捷鍵…' : '錄製'}</button>
-          </div>
+          <div class="shortcut-editor"><kbd>${escapeHtml(shortcutLabel(shortcutDraft.lookup))}</kbd><button class="small-btn ${capturingShortcut === 'lookup' ? 'recording' : ''}" data-capture-shortcut="lookup">${capturingShortcut === 'lookup' ? '請按快捷鍵…' : '錄製'}</button></div>
         </div>
 
         <div class="shortcut-setting-row">
           <div><strong>開啟手動搜尋</strong><span>隨時顯示研究辭典搜尋框</span></div>
-          <div class="shortcut-editor">
-            <kbd>${escapeHtml(shortcutLabel(shortcutDraft.search))}</kbd>
-            <button class="small-btn ${capturingShortcut === 'search' ? 'recording' : ''}" data-capture-shortcut="search">${capturingShortcut === 'search' ? '請按快捷鍵…' : '錄製'}</button>
-          </div>
+          <div class="shortcut-editor"><kbd>${escapeHtml(shortcutLabel(shortcutDraft.search))}</kbd><button class="small-btn ${capturingShortcut === 'search' ? 'recording' : ''}" data-capture-shortcut="search">${capturingShortcut === 'search' ? '請按快捷鍵…' : '錄製'}</button></div>
         </div>
+
+        <label class="update-setting">
+          <input id="autoUpdateCheck" type="checkbox" ${autoUpdateCheck ? 'checked' : ''}>
+          <span><strong>自動偵測新版</strong><small>啟動後與每 4 小時自動檢查 GitHub Release。</small></span>
+        </label>
 
         <div class="settings-status ${hotkeyClass}"><i></i><span>${hotkeyLabel}${hotkeyError ? `：${escapeHtml(hotkeyError)}` : ''}</span></div>
 
         <div class="settings-actions">
-          <button class="secondary-btn" id="resetShortcutBtn">恢復預設</button>
-          <div>
-            <button class="secondary-btn" id="cancelSettingsBtn">取消</button>
-            <button class="primary-btn compact" id="saveShortcutBtn">儲存並套用</button>
-          </div>
+          <button class="secondary-btn" id="resetShortcutBtn">恢復預設快捷鍵</button>
+          <div><button class="secondary-btn" id="cancelSettingsBtn">取消</button><button class="primary-btn compact" id="saveShortcutBtn">儲存並套用</button></div>
         </div>
       </section>
     </div>`;
