@@ -1,0 +1,35 @@
+name: Hydrate repository
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'bootstrap/**'
+
+permissions:
+  contents: write
+
+jobs:
+  hydrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rebuild source archive
+        shell: bash
+        run: |
+          cat bootstrap/part*.txt | tr -d '\n\r' | base64 -d > source.zip
+          rm -rf _hydrate
+          mkdir _hydrate
+          unzip -q source.zip -d _hydrate
+          rsync -a --delete --exclude='.git/' --exclude='bootstrap/' --exclude='.github/workflows/hydrate.yml' _hydrate/research-dictionary-github-ready/ ./
+          rm -rf bootstrap source.zip _hydrate
+          rm -f .chatgpt-write-test
+      - name: Commit hydrated source
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Hydrate research dictionary source" || exit 0
+          git push
