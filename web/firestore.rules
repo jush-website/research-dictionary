@@ -11,22 +11,42 @@ service cloud.firestore {
         && request.auth.uid == "KMKNZedIqZZ4kx4l3dDCSqMxYCZ2";
     }
 
+    // 公開共享辭典。既有資料仍保留在這個 collection。
     match /research_dictionary/{termId} {
-      // 公開瀏覽
       allow read: if true;
 
-      // Google 登入者可新增，作者必須是自己
       allow create: if signedIn()
         && request.resource.data.createdBy == request.auth.uid;
 
-      // 作者本人或管理員可修改；不可竄改原作者 UID
       allow update: if signedIn()
         && (resource.data.createdBy == request.auth.uid || isAdmin())
         && request.resource.data.createdBy == resource.data.createdBy;
 
-      // 作者本人或管理員可刪除
       allow delete: if signedIn()
         && (resource.data.createdBy == request.auth.uid || isAdmin());
+    }
+
+    // 每位使用者自己的私人辭典。
+    // 只有本人可讀寫；勾選共享時，前端會同步一份到 research_dictionary。
+    match /user_research_dictionary/{uid}/terms/{termId} {
+      allow read, create, update, delete: if signedIn()
+        && request.auth.uid == uid
+        && request.resource.data.createdBy == uid;
+    }
+
+    // 桌面版 Google 登入一次性接力文件。
+    // sessionId 為桌面端產生的高強度隨機值；禁止列舉，只允許精確 get。
+    match /desktop_login_sessions/{sessionId} {
+      allow get: if true;
+      allow list: if false;
+
+      allow create: if signedIn()
+        && request.resource.data.uid == request.auth.uid;
+
+      allow update: if false;
+
+      allow delete: if signedIn()
+        && resource.data.uid == request.auth.uid;
     }
   }
 }
