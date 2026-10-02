@@ -92,7 +92,14 @@ function initFontScale(){
 
 function escapeHtml(v=''){ return String(v).replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c])); }
 function showToast(message, error=false){ els.toast.textContent=message; els.toast.className='toast show'+(error?' error':''); setTimeout(()=>els.toast.className='toast',3000); }
-function statusLabel(status){ return status==='confirmed'?'已確認':status==='pending'?'待確認':status==='candidate'?'候選概念':'一般詞彙'; }
+function statusLabel(status){
+  return status==='verified'?'已驗證'
+    :status==='pending'?'待確認'
+    :status==='candidate'?'候選定義'
+    :status==='confirmed'?'已確認（舊）'
+    :status==='general'?'一般詞彙（舊）'
+    :(status||'未設定');
+}
 function ownerName(t){ return t.createdByName || t.createdByEmail || '研究辭典使用者'; }
 function canEdit(t){ return !!currentUser && (t.createdBy === currentUser.uid || currentUser.uid === ADMIN_UID); }
 
@@ -359,7 +366,7 @@ function findSimilar(termEn, termZh, excludeId=''){
 
 function normalizeImportTerm(raw={}){
   const statusRaw=String(raw.status || 'pending').trim().toLowerCase();
-  const status=['confirmed','pending','candidate','general'].includes(statusRaw)?statusRaw:'pending';
+  const status=['verified','confirmed','pending','candidate','general'].includes(statusRaw)?statusRaw:'pending';
   return {
     term_en:String(raw.term_en ?? raw.termEn ?? raw.english ?? '').trim(),
     term_zh:String(raw.term_zh ?? raw.termZh ?? raw.chinese ?? '').trim(),
@@ -369,6 +376,8 @@ function normalizeImportTerm(raw={}){
     example:String(raw.example ?? '').trim(),
     research_note:String(raw.research_note ?? raw.researchNote ?? '').trim(),
     source:String(raw.source ?? '').trim(),
+    sourceType:String(raw.sourceType ?? raw.source_type ?? '').trim(),
+    sourceDetail:String(raw.sourceDetail ?? raw.source_detail ?? '').trim(),
     status,
     is_core:Boolean(raw.is_core ?? raw.isCore ?? false),
     is_shared:raw.is_shared ?? raw.isShared ?? true
