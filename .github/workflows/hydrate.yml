@@ -22,10 +22,9 @@ jobs:
           rm -rf _hydrate
           mkdir _hydrate
           unzip -q source.zip -d _hydrate
-          cp -a _hydrate/research-dictionary-github-ready/. ./
+          rsync -a --exclude='.github/' _hydrate/research-dictionary-github-ready/ ./
           rm -rf bootstrap source.zip _hydrate
           rm -f .chatgpt-write-test
-          rm -f .github/workflows/hydrate.yml
       - name: Commit hydrated source
         shell: bash
         run: |
