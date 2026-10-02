@@ -21,6 +21,7 @@ const COLLECTION_NAME = 'research_dictionary';
 const CACHE_KEY = 'research_dictionary_desktop_cache_v1';
 const SHORTCUT_KEY = 'research_dictionary_desktop_shortcuts_v1';
 const THEME_KEY = 'research_dictionary_desktop_theme_v1';
+const FONT_SCALE_KEY = 'research_dictionary_desktop_font_scale_v1';
 const DEFAULT_SHORTCUTS = Object.freeze({
   lookup: 'Ctrl+Shift+D',
   search: 'Ctrl+Alt+D'
@@ -43,8 +44,10 @@ let hotkeyState = 'loading';
 let hotkeyError = '';
 let toastTimer = null;
 let theme = loadTheme();
+let fontScale = loadFontScale();
 
 applyTheme(theme, false);
+applyFontScale(fontScale, false);
 
 const root = document.querySelector('#app');
 
@@ -155,6 +158,19 @@ function applyTheme(nextTheme, persist = true) {
   document.documentElement.dataset.theme = theme;
   document.documentElement.style.colorScheme = theme;
   if (persist) localStorage.setItem(THEME_KEY, theme);
+}
+
+function loadFontScale() {
+  const saved = Number(localStorage.getItem(FONT_SCALE_KEY));
+  return Number.isFinite(saved) && saved >= 90 && saved <= 150 ? Math.round(saved / 5) * 5 : 100;
+}
+
+function applyFontScale(value, persist = true) {
+  const next = Math.min(150, Math.max(90, Math.round(Number(value || 100) / 5) * 5));
+  fontScale = next;
+  document.documentElement.style.setProperty('--font-scale', String(next / 100));
+  if (persist) localStorage.setItem(FONT_SCALE_KEY, String(next));
+  return next;
 }
 
 function toggleTheme() {
@@ -309,6 +325,17 @@ function settingsTemplate() {
 
         <p class="settings-note">按「錄製」後直接按下你要的按鍵組合。建議至少搭配 Ctrl、Alt 或 Shift，以避免與一般輸入衝突。</p>
 
+        <div class="font-scale-setting">
+          <div>
+            <strong>字體大小</strong>
+            <span>拖曳拉霸即可立即調整，設定會自動記住。</span>
+          </div>
+          <div class="font-scale-editor">
+            <input id="fontScaleSlider" type="range" min="90" max="150" step="5" value="${fontScale}" aria-label="調整字體大小" />
+            <output id="fontScaleValue">${fontScale}%</output>
+          </div>
+        </div>
+
         <div class="shortcut-setting-row">
           <div><strong>查詢目前反白文字</strong><span>選取 PDF／網頁文字後呼叫辭典</span></div>
           <div class="shortcut-editor">
@@ -375,6 +402,14 @@ function wireEvents() {
   document.querySelector('#minimizeBtn')?.addEventListener('click', minimizeWindow);
   document.querySelector('#closeBtn')?.addEventListener('click', hideWindow);
   document.querySelector('#settingsBtn')?.addEventListener('click', openSettings);
+  const fontSlider = document.querySelector('#fontScaleSlider');
+  if (fontSlider) {
+    fontSlider.addEventListener('input', () => {
+      const next = applyFontScale(fontSlider.value);
+      const value = document.querySelector('#fontScaleValue');
+      if (value) value.textContent = `${next}%`;
+    });
+  }
   document.querySelector('#themeBtn')?.addEventListener('click', toggleTheme);
   document.querySelector('#backBtn')?.addEventListener('click', () => { selectedTerm = null; render(); setTimeout(() => document.querySelector('#searchInput')?.focus(), 0); });
   document.querySelector('#refreshBtn')?.addEventListener('click', () => loadTerms(true));
