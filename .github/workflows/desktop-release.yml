@@ -53,12 +53,17 @@ jobs:
           tagName: desktop-v__VERSION__
           releaseName: 'Research Dictionary Desktop v__VERSION__'
           releaseBody: |
-            Windows 桌面研究辭典。
+            Windows 桌面研究辭典 v__VERSION__。
 
+            - 完整詞彙內容、動態分類與多條件篩選
+            - Google 登入後可新增、修改、刪除自己的詞彙
+            - 每筆詞彙可選私人或共享
+            - 字體大小、Light / Dark、自訂全域快捷鍵
+            - 自動偵測 GitHub Release，新版可直接下載、驗證 SHA-256 並安裝
             - NSIS EXE：一般使用者建議安裝檔
             - MSI：Windows Installer 套件
             - Portable EXE：免安裝執行檔
-            - Install-Research-Dictionary.cmd：一鍵下載、靜默安裝並啟動
+            - Install-Research-Dictionary.cmd：一鍵下載、驗證、靜默安裝並啟動
           releaseDraft: false
           prerelease: false
           args: '--bundles nsis,msi'
