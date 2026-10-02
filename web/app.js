@@ -191,13 +191,12 @@ async function authorizeDesktopLogin(){
   try{
     const result=await signInWithPopup(auth,provider);
     const credential=GoogleAuthProvider.credentialFromResult(result);
-    if(!credential?.idToken && !credential?.accessToken) throw new Error('無法取得 Google 登入憑證');
+    if(!credential?.idToken) throw new Error('無法取得 Google ID Token');
     await setDoc(doc(db,'desktop_login_sessions',desktopSessionId),{
       uid:result.user.uid,
       displayName:result.user.displayName||'',
       email:result.user.email||'',
-      googleIdToken:credential.idToken||'',
-      googleAccessToken:credential.accessToken||'',
+      googleIdToken:credential.idToken,
       createdAt:serverTimestamp(),
       expiresAtMs:Date.now()+5*60*1000
     });
