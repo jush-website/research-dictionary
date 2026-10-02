@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#0b1020" />
+  <meta name="description" content="公開的 AI、RAG、IRCoT 與研究方法名詞辭典。" />
+  <title>Research Dictionary｜研究辭典</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600;700&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet">
+  <script>
+    (() => {
+      const saved = localStorage.getItem('research_dictionary_theme_v1');
+      const theme = saved === 'light' || saved === 'dark' ? saved : (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+      document.documentElement.dataset.theme = theme;
+      document.documentElement.style.colorScheme = theme;
+    })();
+  </script>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <div class="ambient ambient-a"></div>
+  <div class="ambient ambient-b"></div>
+
+  <header class="topbar">
+    <a class="brand" href="#">
+      <span class="brand-mark">RD</span>
+      <span><strong>Research Dictionary</strong><small>研究辭典</small></span>
+    </a>
+    <nav class="top-actions">
+      <button id="themeToggle" class="theme-toggle" type="button" aria-label="切換明暗模式" title="切換明暗模式"><span class="theme-toggle-icon" aria-hidden="true"></span><span class="theme-toggle-text">深色</span></button>
+      <button id="loginBtn" class="btn btn-ghost">使用 Google 登入</button>
+      <button id="logoutBtn" class="btn btn-ghost hidden">登出</button>
+      <button id="importBtn" class="btn btn-ghost hidden">⇧ 批次匯入</button>
+      <button id="addBtn" class="btn btn-primary hidden">＋ 新增名詞</button>
+    </nav>
+  </header>
+
+  <main>
+    <div class="dictionary-layout">
+      <aside class="search-sidebar card" aria-label="研究辭典查詢與篩選">
+        <div class="sidebar-title-row">
+          <div>
+            <p class="eyebrow">SEARCH & FILTER</p>
+            <h2>查詢與篩選</h2>
+          </div>
+          <button id="filterToggle" class="mobile-filter-toggle" type="button" aria-expanded="false" aria-controls="filterPanel">
+            篩選條件 <span id="activeFilterCount" class="filter-count hidden">0</span>
+          </button>
+        </div>
+
+        <div class="search-wrap" role="search">
+          <span class="search-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="11" cy="11" r="6.5"></circle>
+              <path d="m16 16 4 4"></path>
+            </svg>
+          </span>
+          <input id="searchInput" type="search" placeholder="搜尋詞彙、定義、來源…" autocomplete="off" spellcheck="false" enterkeyhint="search" aria-label="搜尋研究詞彙" aria-describedby="searchTip" />
+          <kbd class="search-shortcut" aria-hidden="true">Ctrl K</kbd>
+          <button id="clearSearchBtn" class="clear-search hidden" type="button" aria-label="清除搜尋">×</button>
+        </div>
+        <p id="searchTip" class="search-tip">可搜尋中英文、縮寫、定義與來源，並支援多關鍵字。</p>
+
+        <div id="filterPanel" class="filter-panel">
+          <label class="filter-field">
+            <span>分類</span>
+            <select id="categoryFilter"><option value="">所有分類</option></select>
+          </label>
+          <label class="filter-field">
+            <span>狀態</span>
+            <select id="statusFilter">
+              <option value="">所有狀態</option>
+              <option value="confirmed">已確認</option>
+              <option value="pending">待確認</option>
+              <option value="candidate">候選概念</option>
+              <option value="general">一般詞彙</option>
+            </select>
+          </label>
+          <div class="filter-toggles">
+            <label class="toggle"><input id="coreOnly" type="checkbox"><span></span>只看核心</label>
+            <label class="toggle hidden" id="mineWrap"><input id="mineOnly" type="checkbox"><span></span>只看我的</label>
+          </div>
+          <button id="clearFiltersBtn" class="sidebar-clear-btn" type="button">清除全部條件</button>
+        </div>
+      </aside>
+
+      <section class="dictionary-content">
+        <div class="results-bar">
+          <div>
+            <strong id="resultCount">0 個詞彙</strong>
+            <span id="resultContext">顯示全部研究詞彙</span>
+          </div>
+          <span class="results-hint">名稱符合會優先排序</span>
+        </div>
+
+        <section id="emptySetup" class="setup card hidden">
+          <div>
+            <p class="eyebrow">FIRST SETUP</p>
+            <h2>目前 Firestore 還沒有詞條</h2>
+            <p>登入後可一次匯入第一批 RAG、IRCoT、Query、Drift、Q2EI、S2G-RAG 與評估指標。</p>
+          </div>
+          <button id="seedBtn" class="btn btn-primary">匯入初始研究辭典</button>
+        </section>
+
+        <section id="termsGrid" class="terms-grid" aria-live="polite"></section>
+        <section id="noResults" class="no-results hidden">
+          <div class="no-results-icon">⌕</div>
+          <h3>找不到符合條件的詞條</h3>
+          <p id="noResultsText">試著減少關鍵字，或清除分類與狀態篩選。</p>
+        </section>
+      </section>
+    </div>
+  </main>
+
+  <dialog id="termDialog" class="modal">
+    <form id="termForm" method="dialog">
+      <div class="modal-head">
+        <div>
+          <p class="eyebrow" id="modalEyebrow">NEW TERM</p>
+          <h2 id="modalTitle">新增研究名詞</h2>
+        </div>
+        <button type="button" class="icon-btn" id="closeDialog">×</button>
+      </div>
+      <input type="hidden" id="termId" />
+      <div class="form-grid two">
+        <label>英文名稱<input id="termEn" required placeholder="Context Drift"></label>
+        <label>中文名稱<input id="termZh" required placeholder="語境漂移"></label>
+      </div>
+      <div id="duplicateHint" class="duplicate-hint hidden" role="status" aria-live="polite"></div>
+      <div class="form-grid two">
+        <label>分類<input id="category" required list="categoryList" placeholder="Query / Drift"><datalist id="categoryList"></datalist></label>
+        <label>狀態<select id="status"><option value="confirmed">已確認</option><option value="pending">待確認</option><option value="candidate">候選概念</option><option value="general">一般詞彙</option></select></label>
+      </div>
+      <label>正式定義<textarea id="definition" required rows="3" placeholder="較正式、可放進報告或論文筆記的定義"></textarea></label>
+      <label>白話解釋<textarea id="simpleExplanation" required rows="3" placeholder="用自己的話講懂這個名詞"></textarea></label>
+      <label>例子<textarea id="example" rows="3" placeholder="例如：q0 → q1 → q2 的變化"></textarea></label>
+      <label>與研究的關係<textarea id="researchNote" rows="3" placeholder="這個名詞在目前碩論方向扮演什麼角色"></textarea></label>
+      <label>來源<input id="source" placeholder="侯宇炯論文、IRCoT、Q2EI、S2G-RAG…"></label>
+      <label class="checkbox-row"><input id="isCore" type="checkbox"> 標記為核心詞彙</label>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" id="cancelDialog">取消</button>
+        <button type="submit" class="btn btn-primary" id="saveTermBtn">儲存</button>
+      </div>
+    </form>
+  </dialog>
+
+
+  <dialog id="importDialog" class="modal import-modal">
+    <div class="import-wrap">
+      <div class="modal-head">
+        <div>
+          <p class="eyebrow">BATCH IMPORT</p>
+          <h2>匯入研究詞彙</h2>
+          <p class="modal-subtitle">貼上 ChatGPT 整理好的 JSON，系統會先檢查重複與疑似相同詞彙，再決定要不要寫入 Firestore。</p>
+        </div>
+        <button type="button" class="icon-btn" id="closeImportDialog">×</button>
+      </div>
+
+      <label>JSON 資料
+        <textarea id="batchJson" rows="12" spellcheck="false" placeholder='[{"term_en":"Context Drift","term_zh":"語境漂移","category":"Query / Drift","definition":"...","simple_explanation":"...","status":"pending","is_core":true}]'></textarea>
+      </label>
+      <div class="import-toolbar">
+        <label class="file-btn">從 .json 檔載入<input id="batchFile" type="file" accept="application/json,.json"></label>
+        <button type="button" id="analyzeImportBtn" class="btn btn-ghost">檢查資料</button>
+      </div>
+
+      <div id="importSummary" class="import-summary hidden"></div>
+      <div id="importPreview" class="import-preview hidden"></div>
+
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" id="cancelImportDialog">取消</button>
+        <button type="button" class="btn btn-primary" id="executeImportBtn" disabled>匯入可新增詞彙</button>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog id="detailDialog" class="modal detail-modal">
+    <div id="detailContent"></div>
+  </dialog>
+
+  <div id="toast" class="toast"></div>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>

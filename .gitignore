@@ -1,0 +1,22 @@
+# Node / frontend
+**/node_modules/
+**/dist/
+
+# Rust / Tauri
+**/target/
+
+# Vercel local metadata and environment files
+**/.vercel/
+**/.env
+**/.env.*
+!**/.env.example
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Build / temporary
+*.log
+*.tmp

@@ -1,0 +1,22 @@
+[package]
+name = "research-dictionary-desktop"
+version = "0.4.0"
+description = "Windows quick lookup companion for Research Dictionary"
+authors = ["Jush"]
+edition = "2021"
+
+[lib]
+name = "research_dictionary_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon", "image-ico", "image-png"] }
+tauri-plugin-global-shortcut = "2"
+tauri-plugin-autostart = "2"
+tauri-plugin-opener = "2"
+arboard = "3.4"
+enigo = "0.6"
+

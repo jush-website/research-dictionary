@@ -1,0 +1,14 @@
+[
+  {
+    "term_en": "Example Term",
+    "term_zh": "範例名詞",
+    "category": "Query / Drift",
+    "definition": "較正式的定義。",
+    "simple_explanation": "用比較好懂的方式解釋這個名詞。",
+    "example": "可以放研究中的實際例子。",
+    "research_note": "這個名詞與目前研究方向的關係。",
+    "source": "論文名稱、章節或其他來源",
+    "status": "pending",
+    "is_core": false
+  }
+]
