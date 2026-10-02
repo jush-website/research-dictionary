@@ -88,10 +88,11 @@
             <span>狀態</span>
             <select id="statusFilter">
               <option value="">所有狀態</option>
-              <option value="confirmed">已確認</option>
+              <option value="verified">已驗證</option>
               <option value="pending">待確認</option>
-              <option value="candidate">候選概念</option>
-              <option value="general">一般詞彙</option>
+              <option value="candidate">候選定義</option>
+              <option value="confirmed">已確認（舊）</option>
+              <option value="general">一般詞彙（舊）</option>
             </select>
           </label>
           <div class="filter-toggles">
@@ -147,7 +148,7 @@
       <div id="duplicateHint" class="duplicate-hint hidden" role="status" aria-live="polite"></div>
       <div class="form-grid two">
         <label>分類<input id="category" required list="categoryList" placeholder="Query / Drift"><datalist id="categoryList"></datalist></label>
-        <label>狀態<select id="status"><option value="confirmed">已確認</option><option value="pending">待確認</option><option value="candidate">候選概念</option><option value="general">一般詞彙</option></select></label>
+        <label>狀態<select id="status"><option value="verified">已驗證</option><option value="pending" selected>待確認</option><option value="candidate">候選定義</option><option value="confirmed">已確認（舊）</option><option value="general">一般詞彙（舊）</option></select></label>
       </div>
       <label>正式定義<textarea id="definition" required rows="3" placeholder="較正式、可放進報告或論文筆記的定義"></textarea></label>
       <label>白話解釋<textarea id="simpleExplanation" required rows="3" placeholder="用自己的話講懂這個名詞"></textarea></label>
