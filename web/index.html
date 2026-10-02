@@ -45,6 +45,14 @@
     </nav>
   </header>
 
+  <section id="desktopAuthBanner" class="desktop-auth-banner hidden" aria-live="polite">
+    <div>
+      <strong id="desktopAuthTitle">桌面版登入授權</strong>
+      <span id="desktopAuthText">登入 Google 後，可將此帳號安全授權給 Research Dictionary Desktop。</span>
+    </div>
+    <button id="desktopAuthorizeBtn" class="btn btn-primary" type="button">登入並授權桌面版</button>
+  </section>
+
   <main>
     <div class="dictionary-layout">
       <aside class="search-sidebar card" aria-label="研究辭典查詢與篩選">
@@ -146,7 +154,11 @@
       <label>例子<textarea id="example" rows="3" placeholder="例如：q0 → q1 → q2 的變化"></textarea></label>
       <label>與研究的關係<textarea id="researchNote" rows="3" placeholder="這個名詞在目前碩論方向扮演什麼角色"></textarea></label>
       <label>來源<input id="source" placeholder="侯宇炯論文、IRCoT、Q2EI、S2G-RAG…"></label>
-      <label class="checkbox-row"><input id="isCore" type="checkbox"> 標記為核心詞彙</label>
+      <div class="form-grid two form-check-grid">
+        <label class="checkbox-row"><input id="isCore" type="checkbox"> 標記為核心詞彙</label>
+        <label class="checkbox-row"><input id="isShared" type="checkbox"> 共享給其他使用者</label>
+      </div>
+      <p class="share-help">未勾選時，詞彙只會儲存在你的私人辭典；勾選後會同步到公開研究辭典。</p>
       <div class="modal-actions">
         <button type="button" class="btn btn-ghost" id="cancelDialog">取消</button>
         <button type="submit" class="btn btn-primary" id="saveTermBtn">儲存</button>
