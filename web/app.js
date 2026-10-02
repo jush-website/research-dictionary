@@ -1,6 +1,6 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.2.1/firebase-app.js';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/12.2.1/firebase-auth.js';
-import { getFirestore, collection, addDoc, doc, updateDoc, deleteDoc, onSnapshot, query, serverTimestamp, getDocs, writeBatch } from 'https://www.gstatic.com/firebasejs/12.2.1/firebase-firestore.js';
+import { getFirestore, collection, addDoc, doc, setDoc, updateDoc, deleteDoc, onSnapshot, query, serverTimestamp, getDocs, writeBatch } from 'https://www.gstatic.com/firebasejs/12.2.1/firebase-firestore.js';
 
 const firebaseConfig = {
   apiKey: 'AIzaSyAdFJeGDJI9IxRZ9_k2ssOP9Ns3DL6Nhlg',
@@ -21,7 +21,14 @@ const ADMIN_UID = 'KMKNZedIqZZ4kx4l3dDCSqMxYCZ2';
 
 let currentUser = null;
 let terms = [];
+let publicTerms = [];
+let privateTerms = [];
+let unsubscribePrivateTerms = null;
 let pendingImportRows = [];
+const desktopSessionId = (() => {
+  const value = new URLSearchParams(location.search).get('desktop_login') || '';
+  return /^[A-Za-z0-9_-]{32,128}$/.test(value) ? value : '';
+})();
 const THEME_KEY = 'research_dictionary_theme_v1';
 const FONT_SCALE_KEY = 'research_dictionary_font_scale_v1';
 let currentTheme = document.documentElement.dataset.theme === 'light' ? 'light' : 'dark';
@@ -34,10 +41,11 @@ const els = {
   resultCount:$('resultCount'), resultContext:$('resultContext'), noResultsText:$('noResultsText'),
   termsGrid:$('termsGrid'), noResults:$('noResults'), emptySetup:$('emptySetup'), seedBtn:$('seedBtn'),
   termDialog:$('termDialog'), termForm:$('termForm'), closeDialog:$('closeDialog'), cancelDialog:$('cancelDialog'),
-  termId:$('termId'), termEn:$('termEn'), termZh:$('termZh'), category:$('category'), status:$('status'), definition:$('definition'), simpleExplanation:$('simpleExplanation'), example:$('example'), researchNote:$('researchNote'), source:$('source'), isCore:$('isCore'), duplicateHint:$('duplicateHint'), saveTermBtn:$('saveTermBtn'),
+  termId:$('termId'), termEn:$('termEn'), termZh:$('termZh'), category:$('category'), status:$('status'), definition:$('definition'), simpleExplanation:$('simpleExplanation'), example:$('example'), researchNote:$('researchNote'), source:$('source'), isCore:$('isCore'), isShared:$('isShared'), duplicateHint:$('duplicateHint'), saveTermBtn:$('saveTermBtn'),
   detailDialog:$('detailDialog'), detailContent:$('detailContent'), toast:$('toast'), categoryList:$('categoryList'),
   themeToggle:$('themeToggle'), fontSizeSlider:$('fontSizeSlider'), fontSizeValue:$('fontSizeValue'),
-  importDialog:$('importDialog'), closeImportDialog:$('closeImportDialog'), cancelImportDialog:$('cancelImportDialog'), batchJson:$('batchJson'), batchFile:$('batchFile'), analyzeImportBtn:$('analyzeImportBtn'), importSummary:$('importSummary'), importPreview:$('importPreview'), executeImportBtn:$('executeImportBtn')
+  importDialog:$('importDialog'), closeImportDialog:$('closeImportDialog'), cancelImportDialog:$('cancelImportDialog'), batchJson:$('batchJson'), batchFile:$('batchFile'), analyzeImportBtn:$('analyzeImportBtn'), importSummary:$('importSummary'), importPreview:$('importPreview'), executeImportBtn:$('executeImportBtn'),
+  desktopAuthBanner:$('desktopAuthBanner'), desktopAuthTitle:$('desktopAuthTitle'), desktopAuthText:$('desktopAuthText'), desktopAuthorizeBtn:$('desktopAuthorizeBtn')
 };
 
 
@@ -87,6 +95,123 @@ function showToast(message, error=false){ els.toast.textContent=message; els.toa
 function statusLabel(status){ return status==='confirmed'?'已確認':status==='pending'?'待確認':status==='candidate'?'候選概念':'一般詞彙'; }
 function ownerName(t){ return t.createdByName || t.createdByEmail || '研究辭典使用者'; }
 function canEdit(t){ return !!currentUser && (t.createdBy === currentUser.uid || currentUser.uid === ADMIN_UID); }
+
+function personalTermsCollection(uid){
+  return collection(db,'user_research_dictionary',uid,'terms');
+}
+
+function mergeVisibleTerms(){
+  const merged=new Map(publicTerms.map(t=>[t.id,{...t,is_shared:true,_origin:'public'}]));
+  privateTerms.forEach(t=>{
+    const sharedCopy=merged.get(t.id);
+    merged.set(t.id,{...(sharedCopy||{}),...t,is_shared:t.is_shared===true,_origin:'private'});
+  });
+  terms=[...merged.values()];
+  render();
+}
+
+function subscribePrivateTerms(user){
+  if(unsubscribePrivateTerms){ unsubscribePrivateTerms(); unsubscribePrivateTerms=null; }
+  privateTerms=[];
+  if(!user){ mergeVisibleTerms(); return; }
+  unsubscribePrivateTerms=onSnapshot(personalTermsCollection(user.uid),snap=>{
+    privateTerms=snap.docs.map(d=>({id:d.id,...d.data(),_origin:'private'}));
+    mergeVisibleTerms();
+  },err=>{
+    console.error('Private dictionary read failed',err);
+    privateTerms=[];
+    mergeVisibleTerms();
+  });
+}
+
+function termIsShared(term){
+  return term?term.is_shared!==false:false;
+}
+
+async function syncPersonalTerm(termId,payload,original=null){
+  if(!currentUser) throw new Error('請先登入');
+  const uid=currentUser.uid;
+  const personalRef=doc(db,'user_research_dictionary',uid,'terms',termId);
+  const publicRef=doc(db,'research_dictionary',termId);
+  const isOwner=!original || original.createdBy===uid;
+
+  if(!isOwner && uid===ADMIN_UID){
+    await updateDoc(publicRef,{...payload,is_shared:true,updatedAt:serverTimestamp()});
+    return;
+  }
+  if(!isOwner) throw new Error('你只能修改自己建立的詞條');
+
+  const createdAt=original?.createdAt || serverTimestamp();
+  const base={
+    ...payload,
+    createdBy:uid,
+    createdByName:currentUser.displayName||'',
+    createdByEmail:currentUser.email||'',
+    createdAt,
+    updatedAt:serverTimestamp()
+  };
+  await setDoc(personalRef,base,{merge:true});
+
+  if(payload.is_shared){
+    await setDoc(publicRef,{...base,is_shared:true},{merge:true});
+  }else{
+    const legacyPublic=publicTerms.find(t=>t.id===termId && t.createdBy===uid);
+    if(legacyPublic){
+      await deleteDoc(publicRef);
+    }
+  }
+}
+
+async function deletePersonalTerm(term){
+  if(!currentUser) throw new Error('請先登入');
+  const uid=currentUser.uid;
+  if(term.createdBy!==uid && uid!==ADMIN_UID) throw new Error('你只能刪除自己建立的詞條');
+
+  if(term.createdBy!==uid && uid===ADMIN_UID){
+    await deleteDoc(doc(db,'research_dictionary',term.id));
+    return;
+  }
+
+  await deleteDoc(doc(db,'user_research_dictionary',uid,'terms',term.id)).catch(()=>{});
+  const shared=publicTerms.find(t=>t.id===term.id && t.createdBy===uid);
+  if(shared) await deleteDoc(doc(db,'research_dictionary',term.id));
+}
+
+function setupDesktopAuthBanner(){
+  if(!desktopSessionId || !els.desktopAuthBanner) return;
+  els.desktopAuthBanner.classList.remove('hidden');
+  els.desktopAuthTitle.textContent='Research Dictionary Desktop 登入授權';
+  els.desktopAuthText.textContent='請使用 Google 帳號登入，完成後桌面程式會自動接收登入狀態。';
+}
+
+async function authorizeDesktopLogin(){
+  if(!desktopSessionId) return;
+  els.desktopAuthorizeBtn.disabled=true;
+  els.desktopAuthorizeBtn.textContent='授權中…';
+  try{
+    const result=await signInWithPopup(auth,provider);
+    const credential=GoogleAuthProvider.credentialFromResult(result);
+    if(!credential?.idToken && !credential?.accessToken) throw new Error('無法取得 Google 登入憑證');
+    await setDoc(doc(db,'desktop_login_sessions',desktopSessionId),{
+      uid:result.user.uid,
+      displayName:result.user.displayName||'',
+      email:result.user.email||'',
+      googleIdToken:credential.idToken||'',
+      googleAccessToken:credential.accessToken||'',
+      createdAt:serverTimestamp(),
+      expiresAtMs:Date.now()+5*60*1000
+    });
+    els.desktopAuthTitle.textContent='桌面版登入授權完成';
+    els.desktopAuthText.textContent='Research Dictionary Desktop 會自動完成登入。你可以關閉這個分頁。';
+    els.desktopAuthorizeBtn.classList.add('hidden');
+    showToast('桌面版登入授權完成');
+  }catch(e){
+    console.error(e);
+    els.desktopAuthorizeBtn.disabled=false;
+    els.desktopAuthorizeBtn.textContent='重新授權桌面版';
+    showToast(`桌面版授權失敗：${e.code||e.message}`,true);
+  }
+}
 
 function normalizeTermKey(value=''){
   return String(value)
@@ -246,7 +371,8 @@ function normalizeImportTerm(raw={}){
     research_note:String(raw.research_note ?? raw.researchNote ?? '').trim(),
     source:String(raw.source ?? '').trim(),
     status,
-    is_core:Boolean(raw.is_core ?? raw.isCore ?? false)
+    is_core:Boolean(raw.is_core ?? raw.isCore ?? false),
+    is_shared:raw.is_shared ?? raw.isShared ?? true
   };
 }
 
@@ -340,7 +466,7 @@ async function executeBatchImport(){
       const batch=writeBatch(db);
       rows.slice(i,i+400).forEach(({term})=>{
         const ref=doc(termsRef);
-        batch.set(ref,{...term,createdBy:currentUser.uid,createdByName:currentUser.displayName||'',createdByEmail:currentUser.email||'',createdAt:serverTimestamp(),updatedAt:serverTimestamp()});
+        batch.set(ref,{...term,is_shared:true,createdBy:currentUser.uid,createdByName:currentUser.displayName||'',createdByEmail:currentUser.email||'',createdAt:serverTimestamp(),updatedAt:serverTimestamp()});
       });
       await batch.commit();
     }
@@ -394,13 +520,19 @@ onAuthStateChanged(auth, user => {
   els.importBtn.classList.toggle('hidden', !(user && user.uid === ADMIN_UID));
   els.mineWrap.classList.toggle('hidden', !user);
   if(!user) els.mineOnly.checked=false;
+  subscribePrivateTerms(user);
+  if(desktopSessionId && els.desktopAuthorizeBtn){
+    els.desktopAuthorizeBtn.textContent=user?'授權此帳號給桌面版':'登入並授權桌面版';
+  }
   render();
 });
 
 els.loginBtn.addEventListener('click', async()=>{
+  if(desktopSessionId){ await authorizeDesktopLogin(); return; }
   try { await signInWithPopup(auth, provider); showToast('登入成功'); }
   catch(e){ console.error(e); showToast(`登入失敗：${e.code || e.message}`, true); }
 });
+els.desktopAuthorizeBtn?.addEventListener('click',authorizeDesktopLogin);
 els.logoutBtn.addEventListener('click', async()=>{ await signOut(auth); showToast('已登出'); });
 els.addBtn.addEventListener('click', ()=>openForm());
 els.importBtn.addEventListener('click', ()=>{ resetImportDialog(); els.importDialog.classList.remove('dialog-enter'); void els.importDialog.offsetWidth; els.importDialog.classList.add('dialog-enter'); els.importDialog.showModal(); });
@@ -422,8 +554,9 @@ function openForm(term=null){
   if(term){
     els.termEn.value=term.term_en||''; els.termZh.value=term.term_zh||''; els.category.value=term.category||'';
     els.status.value=term.status||'general'; els.definition.value=term.definition||''; els.simpleExplanation.value=term.simple_explanation||'';
-    els.example.value=term.example||''; els.researchNote.value=term.research_note||''; els.source.value=term.source||''; els.isCore.checked=!!term.is_core;
+    els.example.value=term.example||''; els.researchNote.value=term.research_note||''; els.source.value=term.source||''; els.isCore.checked=!!term.is_core; els.isShared.checked=term.is_shared!==false;
   }
+  if(!term) els.isShared.checked=false;
   updateDuplicateHint();
   els.termDialog.classList.remove('dialog-enter');
   void els.termDialog.offsetWidth;
@@ -435,9 +568,9 @@ els.termForm.addEventListener('submit', async(e)=>{
   e.preventDefault();
   if(!currentUser){ showToast('請先登入',true); return; }
   const payload = {
-    term_en:els.termEn.value.trim(), term_zh:els.termZh.value.trim(), category:els.category.value.trim(), status:els.status.value,
+    term_en:els.termEn.value.trim(), term_zh:els.termZh.value.trim(), category:els.category.value.trim()||'未分類', status:els.status.value,
     definition:els.definition.value.trim(), simple_explanation:els.simpleExplanation.value.trim(), example:els.example.value.trim(),
-    research_note:els.researchNote.value.trim(), source:els.source.value.trim(), is_core:els.isCore.checked, updatedAt:serverTimestamp()
+    research_note:els.researchNote.value.trim(), source:els.source.value.trim(), is_core:els.isCore.checked, is_shared:els.isShared.checked
   };
   const duplicate = findDuplicate(payload.term_en, payload.term_zh, els.termId.value);
   if(duplicate){
@@ -447,21 +580,17 @@ els.termForm.addEventListener('submit', async(e)=>{
     return;
   }
   try{
-    if(els.termId.value){
-      const original=terms.find(t=>t.id===els.termId.value);
-      if(!canEdit(original)){ throw new Error('你只能修改自己建立的詞條'); }
-      await updateDoc(doc(db,'research_dictionary',els.termId.value),payload);
-      showToast('詞條已更新');
-    } else {
-      await addDoc(termsRef,{...payload,createdBy:currentUser.uid,createdByName:currentUser.displayName||'',createdByEmail:currentUser.email||'',createdAt:serverTimestamp()});
-      showToast('詞條已新增');
-    }
+    const original=els.termId.value?terms.find(t=>t.id===els.termId.value):null;
+    if(original && !canEdit(original)) throw new Error('你只能修改自己建立的詞條');
+    const termId=els.termId.value || doc(personalTermsCollection(currentUser.uid)).id;
+    await syncPersonalTerm(termId,payload,original);
+    showToast(original?'詞條已更新':'詞條已新增');
     els.termDialog.close();
   }catch(err){ console.error(err); showToast(`儲存失敗：${err.message}`,true); }
 });
 
 function openDetail(term){
-  const chips = `${term.is_core?'<span class="chip core">★ 核心</span>':''}<span class="chip ${term.status==='pending'?'pending':term.status==='candidate'?'candidate':''}">${statusLabel(term.status)}</span><span class="chip">${escapeHtml(term.category)}</span>`;
+  const chips = `${term.is_core?'<span class="chip core">★ 核心</span>':''}<span class="chip ${term.status==='pending'?'pending':term.status==='candidate'?'candidate':''}">${statusLabel(term.status)}</span><span class="chip">${escapeHtml(term.category)}</span><span class="chip ${term.is_shared===false?'private':''}">${term.is_shared===false?'私人':'共享'}</span>`;
   els.detailContent.innerHTML=`
     <button class="icon-btn detail-close" onclick="document.getElementById('detailDialog').close()">×</button>
     <div class="detail-header"><div class="detail-title"><p class="eyebrow">RESEARCH TERM</p><h2>${escapeHtml(term.term_en)}</h2><h3>${escapeHtml(term.term_zh)}</h3><div class="chips">${chips}</div></div></div>
@@ -480,7 +609,7 @@ function openDetail(term){
 async function removeTerm(term){
   if(!canEdit(term)){ showToast('你只能刪除自己建立的詞條',true); return; }
   if(!confirm(`確定刪除「${term.term_en}｜${term.term_zh}」？`)) return;
-  try{ await deleteDoc(doc(db,'research_dictionary',term.id)); showToast('詞條已刪除'); }
+  try{ await deletePersonalTerm(term); showToast('詞條已刪除'); }
   catch(e){ showToast(`刪除失敗：${e.message}`,true); }
 }
 
@@ -512,7 +641,7 @@ function render(){
     <article class="term-card term-enter" style="--delay:${Math.min(index,18)*22}ms">
       <div class="term-top"><div><p class="eyebrow">${escapeHtml(t.category||'UNCATEGORIZED')}</p><h3>${escapeHtml(t.term_en)}</h3><p class="term-zh">${escapeHtml(t.term_zh)}</p></div>${t.is_core?'<span class="core-star" title="核心詞彙">★</span>':''}</div>
       <p class="term-explain">${escapeHtml(t.simple_explanation||t.definition||'')}</p>
-      <div class="chips"><span class="chip ${t.status==='pending'?'pending':t.status==='candidate'?'candidate':''}">${statusLabel(t.status)}</span>${t.is_core?'<span class="chip core">核心</span>':''}</div>
+      <div class="chips"><span class="chip ${t.status==='pending'?'pending':t.status==='candidate'?'candidate':''}">${statusLabel(t.status)}</span>${t.is_core?'<span class="chip core">核心</span>':''}<span class="chip ${t.is_shared===false?'private':''}">${t.is_shared===false?'私人':'共享'}</span></div>
       <div class="card-actions"><button class="link-btn" data-detail="${t.id}">查看完整內容 →</button><div class="mini-actions">${canEdit(t)?`<button data-edit="${t.id}">編輯</button><button class="delete" data-delete="${t.id}">刪除</button>`:''}</div></div>
     </article>`).join('');
 
@@ -542,6 +671,7 @@ function refreshCategories(){
 
 updateThemeButton();
 initFontScale();
+setupDesktopAuthBanner();
 els.themeToggle?.addEventListener('click',toggleTheme);
 els.fontSizeSlider?.addEventListener('input',event=>applyFontScale(event.target.value));
 
@@ -583,7 +713,8 @@ document.addEventListener('keydown',event=>{
 });
 
 onSnapshot(query(termsRef), snap=>{
-  terms=snap.docs.map(d=>({id:d.id,...d.data()})); render();
+  publicTerms=snap.docs.map(d=>({id:d.id,...d.data(),is_shared:true,_origin:'public'}));
+  mergeVisibleTerms();
 }, err=>{
   console.error(err); showToast('讀取 Firestore 失敗，請確認資料庫與 Security Rules。',true);
 });
