@@ -145,7 +145,8 @@ fn check_for_update(current_version: String) -> Result<Option<Vec<String>>, Stri
     #[cfg(target_os = "windows")]
     {
         let script = format!(
-            r#"$ErrorActionPreference='Stop';
+            r#"[Console]::OutputEncoding=[System.Text.Encoding]::UTF8;
+$ErrorActionPreference='Stop';
 $headers=@{{'User-Agent'='ResearchDictionaryDesktop'}};
 $r=Invoke-RestMethod -Uri '{api}' -Headers $headers;
 $version=($r.tag_name -replace '^desktop-v','');
@@ -320,6 +321,7 @@ Remove-Item -LiteralPath $folder -Force -Recurse -ErrorAction SilentlyContinue
         fs::write(&updater_script, script)
             .map_err(|e| format!("無法建立更新安裝腳本：{e}"))?;
 
+        let updater_script_text = updater_script.to_string_lossy().to_string();
         Command::new("powershell.exe")
             .args([
                 "-NoProfile",
@@ -328,7 +330,7 @@ Remove-Item -LiteralPath $folder -Force -Recurse -ErrorAction SilentlyContinue
                 "-WindowStyle",
                 "Hidden",
                 "-File",
-                &updater_script.to_string_lossy(),
+                updater_script_text.as_str(),
             ])
             .spawn()
             .map_err(|e| format!("無法啟動背景更新安裝：{e}"))?;
