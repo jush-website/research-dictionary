@@ -375,7 +375,9 @@ async function checkForUpdates({ manual = false } = {}) {
   try {
     appVersion = await getVersion();
     const info = await invoke('check_for_update', { currentVersion: appVersion });
-    updateInfo = info || null;
+    updateInfo = Array.isArray(info) && info.length >= 2
+      ? { version: info[0], downloadUrl: info[1], digest: info[2] || '' }
+      : null;
     localStorage.setItem(LAST_UPDATE_CHECK_KEY, String(Date.now()));
     if (manual) showToast(updateInfo ? ('發現新版 v' + updateInfo.version) : '目前已是最新版本');
   } catch (error) {
