@@ -310,7 +310,8 @@ async function startDesktopLogin() {
 
       if (snap.exists()) {
         const data = snap.data();
-        if (data.expiresAtMs && Date.now() > data.expiresAtMs) {
+        const expiresAtMs = data.expiresAt?.toMillis?.() || data.expiresAtMs || 0;
+        if (expiresAtMs && Date.now() > expiresAtMs) {
           throw new Error('登入授權已逾時，請重新登入');
         }
         if (!data.googleIdToken && !data.googleAccessToken) {
