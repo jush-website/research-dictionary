@@ -1,0 +1,84 @@
+name: Build Windows Desktop Release
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'desktop/package.json'
+    tags:
+      - 'desktop-v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Read desktop version
+        id: version
+        shell: pwsh
+        run: |
+          $version = (Get-Content 'desktop/package.json' -Raw | ConvertFrom-Json).version
+          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './desktop/src-tauri -> target'
+
+      - name: Install frontend dependencies
+        working-directory: desktop
+        run: npm install
+
+      - name: Build and publish Tauri installers
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: desktop
+          tagName: desktop-v__VERSION__
+          releaseName: 'Research Dictionary Desktop v__VERSION__'
+          releaseBody: |
+            Windows 桌面研究辭典。
+
+            - NSIS EXE：一般使用者建議安裝檔
+            - MSI：Windows Installer 套件
+            - Portable EXE：免安裝執行檔
+            - Install-Research-Dictionary.cmd：一鍵下載、靜默安裝並啟動
+          releaseDraft: false
+          prerelease: false
+          args: '--bundles nsis,msi'
+
+      - name: Prepare portable executable and helper scripts
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem -Path 'desktop/src-tauri/target/release' -Filter 'ResearchDictionary.exe' -File | Select-Object -First 1
+          if (-not $exe) { throw 'ResearchDictionary.exe was not produced.' }
+          New-Item -ItemType Directory -Force -Path 'release-extra' | Out-Null
+          Copy-Item $exe.FullName 'release-extra/ResearchDictionary.exe'
+          Copy-Item 'install/Install-Research-Dictionary.cmd' 'release-extra/Install-Research-Dictionary.cmd'
+          Copy-Item 'install/Run-Portable.cmd' 'release-extra/Run-Portable.cmd'
+
+      - name: Upload portable EXE and one-click scripts to release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: desktop-v${{ steps.version.outputs.version }}
+          name: Research Dictionary Desktop v${{ steps.version.outputs.version }}
+          files: |
+            release-extra/ResearchDictionary.exe
+            release-extra/Install-Research-Dictionary.cmd
+            release-extra/Run-Portable.cmd
