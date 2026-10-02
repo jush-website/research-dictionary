@@ -123,8 +123,10 @@ function scoreTerm(term, rawQuery) {
     [term.simple_explanation, 48],
     [term.definition, 42],
     [term.research_note, 28],
-    [term.source, 18],
-    [term.example, 12]
+    [term.source, 24],
+    [term.sourceType, 20],
+    [term.sourceDetail, 16],
+    [term.example, 14]
   ].filter(([v]) => v).map(([v, weight]) => ({ value: normalize(v), weight }));
 
   let score = 0;
@@ -148,13 +150,59 @@ function scoreTerm(term, rawQuery) {
   return score;
 }
 
+function scopeMatches(term) {
+  if (scopeFilter === 'shared') return term.is_shared !== false;
+  if (scopeFilter === 'mine') return !!currentUser && term.createdBy === currentUser.uid;
+  if (scopeFilter === 'private') return !!currentUser && term.createdBy === currentUser.uid && term.is_shared === false;
+  return true;
+}
+
 function getResults() {
   return terms
     .map((term) => ({ term, score: scoreTerm(term, searchText) }))
-    .filter((x) => x.score >= 0)
-    .sort((a, b) => b.score - a.score || String(a.term.term_en || '').localeCompare(String(b.term.term_en || '')))
-    .slice(0, searchText ? 30 : 18)
+    .filter(({term, score}) =>
+      score >= 0 &&
+      (!categoryFilter || term.category === categoryFilter) &&
+      (!statusFilter || term.status === statusFilter) &&
+      scopeMatches(term)
+    )
+    .sort((a, b) =>
+      b.score - a.score ||
+      Number(b.term.is_core) - Number(a.term.is_core) ||
+      String(a.term.term_en || '').localeCompare(String(b.term.term_en || ''))
+    )
+    .slice(0, searchText ? 60 : 36)
     .map((x) => x.term);
+}
+
+function categories() {
+  return [...new Set(terms.map((t) => String(t.category || '').trim()).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b, 'zh-Hant'));
+}
+
+function mergeTerms() {
+  const merged = new Map();
+  publicTerms.forEach((term) => merged.set(term.id, { ...term, is_shared: true, _origin: 'public' }));
+  privateTerms.forEach((term) => {
+    const shared = merged.get(term.id);
+    merged.set(term.id, { ...(shared || {}), ...term, is_shared: term.is_shared === true, _origin: 'private' });
+  });
+  terms = [...merged.values()];
+  localStorage.setItem(CACHE_KEY, JSON.stringify(terms));
+}
+
+function canEdit(term) {
+  if (!currentUser || !term) return false;
+  return term.createdBy === currentUser.uid || (currentUser.uid === ADMIN_UID && term._origin === 'public');
+}
+
+function visibilityInfo(term) {
+  return term?.is_shared === false ? ['private', '私人'] : ['shared', '共享'];
+}
+
+function ownerLabel(term) {
+  if (currentUser && term.createdBy === currentUser.uid) return '我的詞彙';
+  return term.createdByName || term.createdByEmail || '研究辭典';
 }
 
 function exactMatch(query) {
