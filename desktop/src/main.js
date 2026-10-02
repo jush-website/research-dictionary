@@ -50,12 +50,14 @@ let sourceState = 'loading';
 let categoryFilter = '';
 let statusFilter = '';
 let scopeFilter = 'all';
+let filtersOpen = false;
 let editorOpen = false;
 let editingTerm = null;
 let loginPending = false;
 let loginSessionId = '';
 let loginPollTimer = null;
 let loginMessage = '';
+let loginError = '';
 let updateInfo = null;
 let updateChecking = false;
 let updateInstalling = false;
@@ -281,6 +283,7 @@ function makeSessionId() {
 async function startDesktopLogin() {
   if (loginPending) return;
   loginPending = true;
+  loginError = '';
   loginMessage = '已開啟瀏覽器，等待 Google 登入授權…';
   loginSessionId = makeSessionId();
   render();
@@ -290,7 +293,8 @@ async function startDesktopLogin() {
   } catch (error) {
     loginPending = false;
     loginMessage = '';
-    showToast('無法開啟登入頁面：' + error, true);
+    loginError = String(error?.message || error);
+    showToast('無法開啟登入頁面：' + loginError, true);
     render();
     return;
   }
@@ -299,29 +303,60 @@ async function startDesktopLogin() {
   const poll = async () => {
     if (!loginPending || !loginSessionId) return;
     attempts += 1;
+
     try {
       const ref = doc(db, LOGIN_SESSION_COLLECTION, loginSessionId);
       const snap = await getDoc(ref);
+
       if (snap.exists()) {
         const data = snap.data();
-        if (data.expiresAtMs && Date.now() > data.expiresAtMs) throw new Error('登入授權已逾時，請重新登入');
-        if (!data.googleIdToken) throw new Error('桌面登入憑證不存在');
-        const credential = GoogleAuthProvider.credential(data.googleIdToken, null);
-        const result = await signInWithCredential(auth, credential);
-        try { await deleteDoc(ref); } catch {}
-        loginPending = false;
-        loginMessage = '';
-        loginSessionId = '';
-        showToast('已登入 ' + (result.user.displayName || result.user.email || 'Google 帳號'));
-        render();
-        return;
+        if (data.expiresAtMs && Date.now() > data.expiresAtMs) {
+          throw new Error('登入授權已逾時，請重新登入');
+        }
+        if (!data.googleIdToken && !data.googleAccessToken) {
+          throw new Error('網站沒有回傳可用的 Google 登入憑證');
+        }
+
+        try {
+          const credential = GoogleAuthProvider.credential(
+            data.googleIdToken || null,
+            data.googleAccessToken || null
+          );
+          const result = await signInWithCredential(auth, credential);
+          try { await deleteDoc(ref); } catch {}
+
+          loginPending = false;
+          loginMessage = '';
+          loginError = '';
+          loginSessionId = '';
+          showToast('已登入 ' + (result.user.displayName || result.user.email || 'Google 帳號'));
+          await loadTerms(true);
+          render();
+          return;
+        } catch (authError) {
+          loginPending = false;
+          loginMessage = '';
+          loginError = (authError?.code ? authError.code + '：' : '') + String(authError?.message || authError);
+          showToast('桌面登入失敗：' + loginError, true);
+          render();
+          return;
+        }
       }
     } catch (error) {
       const text = String(error?.message || error);
       if (/permission|permissions|insufficient/i.test(text)) {
         loginPending = false;
         loginMessage = '';
-        showToast('桌面登入需要先發布新版 Firestore Security Rules。', true);
+        loginError = 'Firestore 權限不足。請先發布新版 Security Rules。';
+        showToast(loginError, true);
+        render();
+        return;
+      }
+      if (/逾時|憑證/.test(text)) {
+        loginPending = false;
+        loginMessage = '';
+        loginError = text;
+        showToast(text, true);
         render();
         return;
       }
@@ -331,11 +366,13 @@ async function startDesktopLogin() {
     if (attempts >= 120) {
       loginPending = false;
       loginMessage = '';
+      loginError = '登入等待逾時，請重新操作。';
       loginSessionId = '';
-      showToast('登入等待逾時，請重新操作。', true);
+      showToast(loginError, true);
       render();
       return;
     }
+
     loginPollTimer = window.setTimeout(poll, 1500);
   };
 
@@ -345,6 +382,7 @@ async function startDesktopLogin() {
 function cancelDesktopLogin() {
   loginPending = false;
   loginMessage = '';
+  loginError = '';
   loginSessionId = '';
   if (loginPollTimer) window.clearTimeout(loginPollTimer);
   loginPollTimer = null;
@@ -434,21 +472,20 @@ function renderAccountBar() {
     const name = currentUser.displayName || currentUser.email || '已登入';
     const initial = (name.trim()[0] || 'U').toUpperCase();
     return `
-      <div class="account-bar signed-in">
-        <div class="account-user">
-          <span class="avatar">${escapeHtml(initial)}</span>
-          <div><strong>${escapeHtml(name)}</strong><span>私人詞彙會同步到此帳號</span></div>
-        </div>
-        <div class="account-actions">
-          <button class="primary-btn compact" id="addTermBtn">＋ 新增詞彙</button>
-          <button class="text-btn" id="logoutBtn">登出</button>
-        </div>
+      <div class="account-inline signed-in">
+        <span class="avatar">${escapeHtml(initial)}</span>
+        <span class="account-name" title="${escapeHtml(name)}">${escapeHtml(name)}</span>
+        <button class="toolbar-btn accent" id="addTermBtn">＋ 新增</button>
+        <button class="toolbar-btn" id="logoutBtn">登出</button>
       </div>`;
   }
+
   return `
-    <div class="account-bar">
-      <div><strong>登入後可建立自己的研究辭典</strong><span>${loginPending ? escapeHtml(loginMessage) : '可新增、修改私人詞彙，並自行決定是否共享。'}</span></div>
-      <div class="account-actions">${loginPending ? '<button class="secondary-btn" id="cancelLoginBtn">取消</button>' : '<button class="primary-btn compact" id="loginBtn">使用 Google 登入</button>'}</div>
+    <div class="account-inline">
+      ${loginError ? `<span class="login-error" title="${escapeHtml(loginError)}">登入失敗</span>` : ''}
+      ${loginPending
+        ? '<button class="toolbar-btn" id="cancelLoginBtn">等待登入… ×</button>'
+        : '<button class="toolbar-btn accent" id="loginBtn">Google 登入</button>'}
     </div>`;
 }
 
@@ -480,21 +517,22 @@ function render() {
         </div>
       </header>
 
-      <section class="search-section">
+      <section class="search-section compact-search">
         <div class="search-box">
           <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"></circle><path d="m16 16 4 4"></path></svg>
           <input id="searchInput" autocomplete="off" spellcheck="false" placeholder="搜尋詞彙、定義、分類、來源…" value="${escapeHtml(searchText)}" />
           ${searchText ? '<button id="clearBtn" class="clear-btn" aria-label="清除搜尋">×</button>' : `<kbd>${escapeHtml(shortcutLabel(shortcutConfig.search))}</kbd>`}
         </div>
-        <div class="helper-row">
-          <span><b>${escapeHtml(shortcutLabel(shortcutConfig.lookup))}</b> 查詢目前反白文字</span>
-          <div class="status-cluster">
-            <span class="shortcut-state ${hotkeyClass}" title="${escapeHtml(hotkeyError)}"><i></i>${hotkeyLabel}</span>
-            <span class="sync ${sourceState}"><i></i>${sourceLabel}</span>
+        <div class="compact-toolbar">
+          <div class="lookup-hint"><b>${escapeHtml(shortcutLabel(shortcutConfig.lookup))}</b><span>反白查詢</span></div>
+          <div class="compact-toolbar-actions">
+            <span class="shortcut-state dot-only ${hotkeyClass}" title="${escapeHtml(hotkeyError || hotkeyLabel)}"><i></i></span>
+            <span class="sync dot-only ${sourceState}" title="${escapeHtml(sourceLabel)}"><i></i></span>
+            <button class="toolbar-btn ${filtersOpen ? 'active' : ''}" id="filterToggleBtn">篩選${(categoryFilter || statusFilter || scopeFilter !== 'all') ? ' •' : ''}</button>
+            ${renderAccountBar()}
           </div>
         </div>
-        ${renderFilters()}
-        ${renderAccountBar()}
+        ${filtersOpen ? renderFilters() : ''}
       </section>
 
       ${current ? detailTemplate(current) : listTemplate(results)}
@@ -718,6 +756,11 @@ function wireEvents() {
     selectedTerm = null;
     render();
     setTimeout(() => document.querySelector('#searchInput')?.focus(), 0);
+  });
+
+  document.querySelector('#filterToggleBtn')?.addEventListener('click', () => {
+    filtersOpen = !filtersOpen;
+    render();
   });
 
   document.querySelector('#categoryFilter')?.addEventListener('change', (event) => {
