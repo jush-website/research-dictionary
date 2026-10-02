@@ -284,3 +284,47 @@ html[data-theme="light"] .toast.error { background:#fff0f0; color:#a34e4e; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration:.001ms !important; animation-iteration-count:1 !important; transition-duration:.001ms !important; scroll-behavior:auto !important; }
 }
+
+
+/* v0.4.2: adjustable font scale */
+:root { --font-scale: 1; }
+.brand strong { font-size:calc(14px * var(--font-scale)); }
+.brand span { font-size:calc(11px * var(--font-scale)); }
+.search-box input { font-size:calc(14px * var(--font-scale)); }
+kbd { font-size:calc(10px * var(--font-scale)); }
+.helper-row { font-size:calc(10.5px * var(--font-scale)); }
+.result-head strong { font-size:calc(12px * var(--font-scale)); }
+.result-head span { font-size:calc(10px * var(--font-scale)); }
+.term-title strong { font-size:calc(14px * var(--font-scale)); }
+.term-zh { font-size:calc(12px * var(--font-scale)); }
+.term-card p { font-size:calc(11.5px * var(--font-scale)); }
+.term-meta { font-size:calc(9.5px * var(--font-scale)); }
+.status,.core { font-size:calc(9px * var(--font-scale)); }
+.empty strong { font-size:calc(14px * var(--font-scale)); }
+.empty span { font-size:calc(11px * var(--font-scale)); }
+.primary-btn,.back-btn { font-size:calc(11px * var(--font-scale)); }
+.detail-heading h1 { font-size:calc(21px * var(--font-scale)); }
+.detail-heading h2 { font-size:calc(14px * var(--font-scale)); }
+.category-line { font-size:calc(10px * var(--font-scale)); }
+.detail-block h3 { font-size:calc(10px * var(--font-scale)); }
+.detail-block p { font-size:calc(12px * var(--font-scale)); }
+.source-box div { font-size:calc(10px * var(--font-scale)); }
+.footer,.text-btn { font-size:calc(10px * var(--font-scale)); }
+.settings-head h2 { font-size:calc(18px * var(--font-scale)); }
+.settings-eyebrow { font-size:calc(9px * var(--font-scale)); }
+.settings-note,.shortcut-setting-row span,.settings-status,.small-btn,.secondary-btn,.primary-btn.compact { font-size:calc(10px * var(--font-scale)); }
+.shortcut-setting-row strong { font-size:calc(12px * var(--font-scale)); }
+.toast { font-size:calc(10.5px * var(--font-scale)); }
+.font-scale-setting { display:grid; grid-template-columns:1fr minmax(175px, 210px); align-items:center; gap:14px; padding:14px 0; border-top:1px solid var(--line); }
+.font-scale-setting strong { display:block; font-size:calc(12px * var(--font-scale)); color:#e0e9e6; }
+.font-scale-setting span { display:block; margin-top:4px; font-size:calc(10px * var(--font-scale)); color:#76879a; line-height:1.45; }
+.font-scale-editor { display:flex; align-items:center; gap:9px; }
+.font-scale-editor input[type="range"] { width:140px; margin:0; accent-color:var(--green); }
+.font-scale-editor output { min-width:40px; text-align:right; color:#9fb0c2; font-size:calc(10px * var(--font-scale)); font-variant-numeric:tabular-nums; }
+html[data-theme="light"] .font-scale-setting strong { color:#21313b; }
+html[data-theme="light"] .font-scale-setting span,html[data-theme="light"] .font-scale-editor output { color:#6c7c89; }
+@media (max-width: 520px) {
+  .font-scale-setting { grid-template-columns:1fr; }
+  .font-scale-editor { justify-content:flex-start; }
+  .font-scale-editor input[type="range"] { flex:1; max-width:220px; }
+}
