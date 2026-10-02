@@ -344,3 +344,31 @@ input,textarea,select{font-size:calc(14px * var(--font-scale))}
   .font-size-control{height:36px;padding:0 8px}
   .font-size-control output{min-width:34px}
 }
+
+
+/* v8: personal/private dictionary + desktop authorization */
+.desktop-auth-banner{
+  width:min(1180px,calc(100% - 36px));
+  margin:14px auto 0;
+  padding:14px 16px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:16px;
+  border:1px solid rgba(128,228,196,.24);
+  border-radius:16px;
+  background:linear-gradient(135deg,rgba(128,228,196,.08),rgba(138,164,255,.07));
+}
+.desktop-auth-banner>div{min-width:0}
+.desktop-auth-banner strong{display:block;font-size:calc(14px * var(--font-scale));color:var(--text)}
+.desktop-auth-banner span{display:block;margin-top:4px;color:var(--muted);font-size:calc(12px * var(--font-scale));line-height:1.55}
+.share-help{margin:-4px 0 12px;color:var(--muted);font-size:calc(11px * var(--font-scale));line-height:1.55}
+.form-check-grid{align-items:center}
+.form-check-grid .checkbox-row{margin-bottom:8px}
+.chip.private{color:#d5c6ff;border-color:rgba(193,153,255,.28);background:rgba(193,153,255,.08)}
+html[data-theme="light"] .desktop-auth-banner{background:linear-gradient(135deg,rgba(22,139,106,.06),rgba(83,111,209,.05));border-color:rgba(22,139,106,.18)}
+html[data-theme="light"] .chip.private{color:#65449a;background:rgba(121,80,184,.07);border-color:rgba(121,80,184,.18)}
+@media(max-width:720px){
+  .desktop-auth-banner{width:min(100% - 24px,1180px);align-items:stretch;flex-direction:column}
+  .desktop-auth-banner .btn{width:100%}
+}
