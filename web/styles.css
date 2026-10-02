@@ -302,3 +302,45 @@ html[data-theme="light"] .sidebar-clear-btn{background:rgba(35,57,87,.025)}
 
 @media(max-width:620px){.theme-toggle{width:40px;padding:0;justify-content:center}.theme-toggle-text{display:none}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important;scroll-behavior:auto!important}}
+
+
+/* v7: adjustable font scale */
+:root{--font-scale:1}
+.font-size-control{height:40px;display:inline-flex;align-items:center;gap:7px;margin:0;padding:0 10px;border:1px solid var(--line);border-radius:12px;background:rgba(255,255,255,.035);color:var(--muted);white-space:nowrap}
+.font-size-label{font-weight:800;color:var(--text);font-size:calc(13px * var(--font-scale))}
+.font-size-control input[type="range"]{width:96px;margin:0;padding:0;border:0;background:transparent;box-shadow:none;accent-color:var(--accent2)}
+.font-size-control output{min-width:38px;text-align:right;color:var(--muted);font-size:calc(11px * var(--font-scale))}
+html[data-theme="light"] .font-size-control{background:rgba(255,255,255,.68)}
+.brand strong{font-size:calc(15px * var(--font-scale))}
+.brand small{font-size:calc(13px * var(--font-scale))}
+.btn,.theme-toggle{font-size:calc(14px * var(--font-scale))}
+.eyebrow{font-size:calc(12px * var(--font-scale))}
+.sidebar-title-row h2{font-size:calc(24px * var(--font-scale))}
+.search-sidebar .search-wrap input{font-size:calc(14px * var(--font-scale))}
+.search-tip,.filter-field>span,.mobile-filter-toggle,.sidebar-clear-btn{font-size:calc(12px * var(--font-scale))}
+.filter-field select,.toggle{font-size:calc(13px * var(--font-scale))}
+.results-bar strong{font-size:calc(14px * var(--font-scale))}
+.results-bar span,.results-hint{font-size:calc(12px * var(--font-scale))}
+.term-card h3{font-size:calc(21px * var(--font-scale))}
+.term-zh{font-size:calc(15px * var(--font-scale))}
+.term-explain{font-size:calc(14px * var(--font-scale))}
+.chip{font-size:calc(11px * var(--font-scale))}
+.link-btn,.mini-actions button,.owner{font-size:calc(12px * var(--font-scale))}
+.modal h2{font-size:calc(26px * var(--font-scale))}
+label{font-size:calc(13px * var(--font-scale))}
+input,textarea,select{font-size:calc(14px * var(--font-scale))}
+.modal-subtitle,.duplicate-hint{font-size:calc(13px * var(--font-scale))}
+.detail-title h2{font-size:calc(31px * var(--font-scale))}
+.detail-title h3{font-size:calc(16px * var(--font-scale))}
+.detail-section h4{font-size:calc(14px * var(--font-scale))}
+.detail-section p{font-size:calc(14px * var(--font-scale))}
+.toast{font-size:calc(13px * var(--font-scale))}
+@media(max-width:760px){
+  .font-size-control{order:10;width:100%;justify-content:flex-end}
+  .font-size-control input[type="range"]{width:min(160px,42vw)}
+}
+@media(max-width:620px){
+  .font-size-label{display:none}
+  .font-size-control{height:36px;padding:0 8px}
+  .font-size-control output{min-width:34px}
+}
