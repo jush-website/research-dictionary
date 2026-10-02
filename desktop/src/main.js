@@ -270,6 +270,140 @@ function hotkeyStatusLabel() {
   return ['loading', '快捷鍵載入中'];
 }
 
+function makeSessionId() {
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  let binary = '';
+  bytes.forEach((b) => { binary += String.fromCharCode(b); });
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+}
+
+async function startDesktopLogin() {
+  if (loginPending) return;
+  loginPending = true;
+  loginMessage = '已開啟瀏覽器，等待 Google 登入授權…';
+  loginSessionId = makeSessionId();
+  render();
+
+  try {
+    await invoke('open_desktop_login_url', { sessionId: loginSessionId });
+  } catch (error) {
+    loginPending = false;
+    loginMessage = '';
+    showToast('無法開啟登入頁面：' + error, true);
+    render();
+    return;
+  }
+
+  let attempts = 0;
+  const poll = async () => {
+    if (!loginPending || !loginSessionId) return;
+    attempts += 1;
+    try {
+      const ref = doc(db, LOGIN_SESSION_COLLECTION, loginSessionId);
+      const snap = await getDoc(ref);
+      if (snap.exists()) {
+        const data = snap.data();
+        if (data.expiresAtMs && Date.now() > data.expiresAtMs) throw new Error('登入授權已逾時，請重新登入');
+        const credential = GoogleAuthProvider.credential(
+          data.googleIdToken || null,
+          data.googleAccessToken || null
+        );
+        const result = await signInWithCredential(auth, credential);
+        try { await deleteDoc(ref); } catch {}
+        loginPending = false;
+        loginMessage = '';
+        loginSessionId = '';
+        showToast('已登入 ' + (result.user.displayName || result.user.email || 'Google 帳號'));
+        render();
+        return;
+      }
+    } catch (error) {
+      const text = String(error?.message || error);
+      if (/permission|permissions|insufficient/i.test(text)) {
+        loginPending = false;
+        loginMessage = '';
+        showToast('桌面登入需要先發布新版 Firestore Security Rules。', true);
+        render();
+        return;
+      }
+      console.warn('Desktop login polling:', error);
+    }
+
+    if (attempts >= 120) {
+      loginPending = false;
+      loginMessage = '';
+      loginSessionId = '';
+      showToast('登入等待逾時，請重新操作。', true);
+      render();
+      return;
+    }
+    loginPollTimer = window.setTimeout(poll, 1500);
+  };
+
+  poll();
+}
+
+function cancelDesktopLogin() {
+  loginPending = false;
+  loginMessage = '';
+  loginSessionId = '';
+  if (loginPollTimer) window.clearTimeout(loginPollTimer);
+  loginPollTimer = null;
+  render();
+}
+
+async function logoutDesktop() {
+  cancelDesktopLogin();
+  await signOut(auth);
+  selectedTerm = null;
+  scopeFilter = 'all';
+  showToast('已登出');
+}
+
+async function checkForUpdates({ manual = false } = {}) {
+  if (updateChecking || updateInstalling) return;
+  if (!manual && !autoUpdateCheck) return;
+
+  if (!manual) {
+    const last = Number(localStorage.getItem(LAST_UPDATE_CHECK_KEY) || 0);
+    if (Date.now() - last < 4 * 60 * 60 * 1000) return;
+  }
+
+  updateChecking = true;
+  render();
+  try {
+    appVersion = await getVersion();
+    const info = await invoke('check_for_update', { currentVersion: appVersion });
+    updateInfo = info || null;
+    localStorage.setItem(LAST_UPDATE_CHECK_KEY, String(Date.now()));
+    if (manual) showToast(updateInfo ? ('發現新版 v' + updateInfo.version) : '目前已是最新版本');
+  } catch (error) {
+    console.error('Update check failed:', error);
+    if (manual) showToast('檢查更新失敗：' + error, true);
+  } finally {
+    updateChecking = false;
+    render();
+  }
+}
+
+async function installAvailableUpdate() {
+  if (!updateInfo || updateInstalling) return;
+  updateInstalling = true;
+  render();
+  showToast('正在下載 v' + updateInfo.version + '，完成後會自動安裝並重新開啟。');
+  try {
+    await invoke('install_update', {
+      downloadUrl: updateInfo.downloadUrl,
+      digest: updateInfo.digest
+    });
+  } catch (error) {
+    updateInstalling = false;
+    render();
+    showToast('更新失敗：' + error, true);
+  }
+}
+
 function render() {
   const results = getResults();
   const current = selectedTerm;
