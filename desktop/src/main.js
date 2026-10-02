@@ -305,10 +305,8 @@ async function startDesktopLogin() {
       if (snap.exists()) {
         const data = snap.data();
         if (data.expiresAtMs && Date.now() > data.expiresAtMs) throw new Error('登入授權已逾時，請重新登入');
-        const credential = GoogleAuthProvider.credential(
-          data.googleIdToken || null,
-          data.googleAccessToken || null
-        );
+        if (!data.googleIdToken) throw new Error('桌面登入憑證不存在');
+        const credential = GoogleAuthProvider.credential(data.googleIdToken, null);
         const result = await signInWithCredential(auth, credential);
         try { await deleteDoc(ref); } catch {}
         loginPending = false;
