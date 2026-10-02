@@ -41,7 +41,7 @@ const els = {
   resultCount:$('resultCount'), resultContext:$('resultContext'), noResultsText:$('noResultsText'),
   termsGrid:$('termsGrid'), noResults:$('noResults'), emptySetup:$('emptySetup'), seedBtn:$('seedBtn'),
   termDialog:$('termDialog'), termForm:$('termForm'), closeDialog:$('closeDialog'), cancelDialog:$('cancelDialog'),
-  termId:$('termId'), termEn:$('termEn'), termZh:$('termZh'), category:$('category'), status:$('status'), definition:$('definition'), simpleExplanation:$('simpleExplanation'), example:$('example'), researchNote:$('researchNote'), source:$('source'), isCore:$('isCore'), isShared:$('isShared'), duplicateHint:$('duplicateHint'), saveTermBtn:$('saveTermBtn'),
+  termId:$('termId'), termEn:$('termEn'), termZh:$('termZh'), category:$('category'), status:$('status'), definition:$('definition'), simpleExplanation:$('simpleExplanation'), example:$('example'), researchNote:$('researchNote'), source:$('source'), sourceType:$('sourceType'), sourceDetail:$('sourceDetail'), isCore:$('isCore'), isShared:$('isShared'), duplicateHint:$('duplicateHint'), saveTermBtn:$('saveTermBtn'),
   detailDialog:$('detailDialog'), detailContent:$('detailContent'), toast:$('toast'), categoryList:$('categoryList'),
   themeToggle:$('themeToggle'), fontSizeSlider:$('fontSizeSlider'), fontSizeValue:$('fontSizeValue'),
   importDialog:$('importDialog'), closeImportDialog:$('closeImportDialog'), cancelImportDialog:$('cancelImportDialog'), batchJson:$('batchJson'), batchFile:$('batchFile'), analyzeImportBtn:$('analyzeImportBtn'), importSummary:$('importSummary'), importPreview:$('importPreview'), executeImportBtn:$('executeImportBtn'),
@@ -562,7 +562,7 @@ function openForm(term=null){
   if(term){
     els.termEn.value=term.term_en||''; els.termZh.value=term.term_zh||''; els.category.value=term.category||'';
     els.status.value=term.status||'general'; els.definition.value=term.definition||''; els.simpleExplanation.value=term.simple_explanation||'';
-    els.example.value=term.example||''; els.researchNote.value=term.research_note||''; els.source.value=term.source||''; els.isCore.checked=!!term.is_core; els.isShared.checked=term.is_shared!==false;
+    els.example.value=term.example||''; els.researchNote.value=term.research_note||''; els.source.value=term.source||''; els.sourceType.value=term.sourceType||''; els.sourceDetail.value=term.sourceDetail||''; els.isCore.checked=!!term.is_core; els.isShared.checked=term.is_shared!==false;
   }
   if(!term) els.isShared.checked=false;
   updateDuplicateHint();
@@ -578,7 +578,7 @@ els.termForm.addEventListener('submit', async(e)=>{
   const payload = {
     term_en:els.termEn.value.trim(), term_zh:els.termZh.value.trim(), category:els.category.value.trim()||'未分類', status:els.status.value,
     definition:els.definition.value.trim(), simple_explanation:els.simpleExplanation.value.trim(), example:els.example.value.trim(),
-    research_note:els.researchNote.value.trim(), source:els.source.value.trim(), is_core:els.isCore.checked, is_shared:els.isShared.checked
+    research_note:els.researchNote.value.trim(), source:els.source.value.trim(), sourceType:els.sourceType.value.trim(), sourceDetail:els.sourceDetail.value.trim(), is_core:els.isCore.checked, is_shared:els.isShared.checked
   };
   const duplicate = findDuplicate(payload.term_en, payload.term_zh, els.termId.value);
   if(duplicate){
@@ -607,6 +607,8 @@ function openDetail(term){
     <div class="detail-section"><h4>例子</h4><p>${escapeHtml(term.example||'—')}</p></div>
     <div class="detail-section"><h4>與研究的關係</h4><p>${escapeHtml(term.research_note||'—')}</p></div>
     <div class="detail-section"><h4>來源</h4><p>${escapeHtml(term.source||'—')}</p></div>
+    ${term.sourceType?`<div class="detail-section"><h4>來源類型</h4><p>${escapeHtml(term.sourceType)}</p></div>`:''}
+    ${term.sourceDetail?`<div class="detail-section"><h4>來源位置</h4><p>${escapeHtml(term.sourceDetail)}</p></div>`:''}
     <div class="detail-section"><p class="owner">建立者：${escapeHtml(ownerName(term))}</p></div>`;
   els.detailDialog.classList.remove('dialog-enter');
   void els.detailDialog.offsetWidth;
