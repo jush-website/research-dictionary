@@ -187,8 +187,8 @@ Write-Output $digest;"#,
         let download_url = lines.next().unwrap_or("").to_string();
         let digest = lines.next().unwrap_or("").to_string();
 
-        if latest.is_empty() || download_url.is_empty() {
-            return Err("GitHub Release 回傳內容不完整。".to_string());
+        if latest.is_empty() || download_url.is_empty() || digest.is_empty() {
+            return Err("GitHub Release 更新資訊或 SHA-256 校驗碼尚未就緒。".to_string());
         }
 
         if !download_url.starts_with(RELEASE_DOWNLOAD_PREFIX) {
