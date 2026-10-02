@@ -1,6 +1,6 @@
 [package]
 name = "research-dictionary-desktop"
-version = "0.5.2"
+version = "0.5.3"
 description = "Windows quick lookup companion for Research Dictionary"
 authors = ["Jush"]
 edition = "2021"
