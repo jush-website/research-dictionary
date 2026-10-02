@@ -206,7 +206,8 @@ async function authorizeDesktopLogin(){
       googleIdToken:credential.idToken||'',
       googleAccessToken:credential.accessToken||'',
       createdAt:serverTimestamp(),
-      expiresAt:Timestamp.fromMillis(Date.now()+5*60*1000)
+      expiresAt:Timestamp.fromMillis(Date.now()+5*60*1000),
+      expiresAtMs:Date.now()+5*60*1000
     });
     els.desktopAuthTitle.textContent='桌面版登入授權完成';
     els.desktopAuthText.textContent='Research Dictionary Desktop 會自動完成登入。你可以關閉這個分頁。';
