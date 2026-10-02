@@ -1,6 +1,6 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.2.1/firebase-app.js';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/12.2.1/firebase-auth.js';
-import { getFirestore, collection, addDoc, doc, setDoc, updateDoc, deleteDoc, onSnapshot, query, serverTimestamp, getDocs, writeBatch } from 'https://www.gstatic.com/firebasejs/12.2.1/firebase-firestore.js';
+import { getFirestore, collection, addDoc, doc, setDoc, updateDoc, deleteDoc, onSnapshot, query, serverTimestamp, Timestamp, getDocs, writeBatch } from 'https://www.gstatic.com/firebasejs/12.2.1/firebase-firestore.js';
 
 const firebaseConfig = {
   apiKey: 'AIzaSyAdFJeGDJI9IxRZ9_k2ssOP9Ns3DL6Nhlg',
@@ -206,7 +206,7 @@ async function authorizeDesktopLogin(){
       googleIdToken:credential.idToken||'',
       googleAccessToken:credential.accessToken||'',
       createdAt:serverTimestamp(),
-      expiresAtMs:Date.now()+5*60*1000
+      expiresAt:Timestamp.fromMillis(Date.now()+5*60*1000)
     });
     els.desktopAuthTitle.textContent='桌面版登入授權完成';
     els.desktopAuthText.textContent='Research Dictionary Desktop 會自動完成登入。你可以關閉這個分頁。';
