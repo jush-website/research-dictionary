@@ -15,6 +15,9 @@
       const theme = saved === 'light' || saved === 'dark' ? saved : (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
       document.documentElement.dataset.theme = theme;
       document.documentElement.style.colorScheme = theme;
+      const savedFont = Number(localStorage.getItem('research_dictionary_font_scale_v1'));
+      const fontScale = Number.isFinite(savedFont) && savedFont >= 90 && savedFont <= 150 ? savedFont : 100;
+      document.documentElement.style.setProperty('--font-scale', String(fontScale / 100));
     })();
   </script>
   <link rel="stylesheet" href="./styles.css" />
@@ -29,6 +32,11 @@
       <span><strong>Research Dictionary</strong><small>研究辭典</small></span>
     </a>
     <nav class="top-actions">
+      <label class="font-size-control" title="調整介面字體大小">
+        <span class="font-size-label" aria-hidden="true">Aa</span>
+        <input id="fontSizeSlider" type="range" min="90" max="150" step="5" value="100" aria-label="調整字體大小" />
+        <output id="fontSizeValue" for="fontSizeSlider">100%</output>
+      </label>
       <button id="themeToggle" class="theme-toggle" type="button" aria-label="切換明暗模式" title="切換明暗模式"><span class="theme-toggle-icon" aria-hidden="true"></span><span class="theme-toggle-text">深色</span></button>
       <button id="loginBtn" class="btn btn-ghost">使用 Google 登入</button>
       <button id="logoutBtn" class="btn btn-ghost hidden">登出</button>
