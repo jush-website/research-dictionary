@@ -73,6 +73,14 @@ jobs:
           Copy-Item 'install/Install-Research-Dictionary.cmd' 'release-extra/Install-Research-Dictionary.cmd'
           Copy-Item 'install/Run-Portable.cmd' 'release-extra/Run-Portable.cmd'
 
+      - name: Generate installer checksum
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem -Path 'desktop/src-tauri/target/release/bundle/nsis' -Filter '*setup.exe' -File | Select-Object -First 1
+          if (-not $setup) { throw 'NSIS setup executable was not found.' }
+          $hash = (Get-FileHash -Algorithm SHA256 $setup.FullName).Hash.ToLowerInvariant()
+          "$hash  $($setup.Name)" | Out-File -FilePath 'release-extra/SHA256SUMS.txt' -Encoding ascii
+
       - name: Upload portable EXE and one-click scripts to release
         uses: softprops/action-gh-release@v2
         with:
@@ -82,3 +90,4 @@ jobs:
             release-extra/ResearchDictionary.exe
             release-extra/Install-Research-Dictionary.cmd
             release-extra/Run-Portable.cmd
+            release-extra/SHA256SUMS.txt
