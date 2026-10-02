@@ -1,8 +1,10 @@
 import './styles.css';
 import { initializeApp } from 'firebase/app';
-import { getFirestore, collection, getDocs } from 'firebase/firestore';
+import { getAuth, GoogleAuthProvider, signInWithCredential, signOut, onAuthStateChanged } from 'firebase/auth';
+import { getFirestore, collection, doc, getDocs, getDoc, setDoc, updateDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import { getVersion } from '@tauri-apps/api/app';
 import { register, unregisterAll } from '@tauri-apps/plugin-global-shortcut';
 import { enable as enableAutostart, disable as disableAutostart, isEnabled as isAutostartEnabled } from '@tauri-apps/plugin-autostart';
 
@@ -18,9 +20,14 @@ const firebaseConfig = {
 };
 
 const COLLECTION_NAME = 'research_dictionary';
+const PRIVATE_ROOT = 'user_research_dictionary';
+const LOGIN_SESSION_COLLECTION = 'desktop_login_sessions';
+const ADMIN_UID = 'KMKNZedIqZZ4kx4l3dDCSqMxYCZ2';
 const CACHE_KEY = 'research_dictionary_desktop_cache_v1';
 const SHORTCUT_KEY = 'research_dictionary_desktop_shortcuts_v1';
 const THEME_KEY = 'research_dictionary_desktop_theme_v1';
+const UPDATE_CHECK_KEY = 'research_dictionary_desktop_update_check_v1';
+const LAST_UPDATE_CHECK_KEY = 'research_dictionary_desktop_last_update_check_v1';
 const FONT_SCALE_KEY = 'research_dictionary_desktop_font_scale_v1';
 const DEFAULT_SHORTCUTS = Object.freeze({
   lookup: 'Ctrl+Shift+D',
@@ -28,14 +35,32 @@ const DEFAULT_SHORTCUTS = Object.freeze({
 });
 
 const firebaseApp = initializeApp(firebaseConfig);
+const auth = getAuth(firebaseApp);
 const db = getFirestore(firebaseApp);
 const appWindow = getCurrentWindow();
 
+let publicTerms = [];
+let privateTerms = [];
 let terms = [];
+let currentUser = null;
 let searchText = '';
 let selectedTerm = null;
 let loading = true;
 let sourceState = 'loading';
+let categoryFilter = '';
+let statusFilter = '';
+let scopeFilter = 'all';
+let editorOpen = false;
+let editingTerm = null;
+let loginPending = false;
+let loginSessionId = '';
+let loginPollTimer = null;
+let loginMessage = '';
+let updateInfo = null;
+let updateChecking = false;
+let updateInstalling = false;
+let autoUpdateCheck = localStorage.getItem(UPDATE_CHECK_KEY) !== 'false';
+let appVersion = '0.0.0';
 let settingsOpen = false;
 let shortcutConfig = loadShortcutConfig();
 let shortcutDraft = { ...shortcutConfig };
