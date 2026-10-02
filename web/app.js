@@ -23,6 +23,7 @@ let currentUser = null;
 let terms = [];
 let pendingImportRows = [];
 const THEME_KEY = 'research_dictionary_theme_v1';
+const FONT_SCALE_KEY = 'research_dictionary_font_scale_v1';
 let currentTheme = document.documentElement.dataset.theme === 'light' ? 'light' : 'dark';
 
 const $ = (id) => document.getElementById(id);
@@ -35,7 +36,7 @@ const els = {
   termDialog:$('termDialog'), termForm:$('termForm'), closeDialog:$('closeDialog'), cancelDialog:$('cancelDialog'),
   termId:$('termId'), termEn:$('termEn'), termZh:$('termZh'), category:$('category'), status:$('status'), definition:$('definition'), simpleExplanation:$('simpleExplanation'), example:$('example'), researchNote:$('researchNote'), source:$('source'), isCore:$('isCore'), duplicateHint:$('duplicateHint'), saveTermBtn:$('saveTermBtn'),
   detailDialog:$('detailDialog'), detailContent:$('detailContent'), toast:$('toast'), categoryList:$('categoryList'),
-  themeToggle:$('themeToggle'),
+  themeToggle:$('themeToggle'), fontSizeSlider:$('fontSizeSlider'), fontSizeValue:$('fontSizeValue'),
   importDialog:$('importDialog'), closeImportDialog:$('closeImportDialog'), cancelImportDialog:$('cancelImportDialog'), batchJson:$('batchJson'), batchFile:$('batchFile'), analyzeImportBtn:$('analyzeImportBtn'), importSummary:$('importSummary'), importPreview:$('importPreview'), executeImportBtn:$('executeImportBtn')
 };
 
@@ -62,6 +63,24 @@ function setTheme(theme,{persist=true}={}){
 }
 
 function toggleTheme(){ setTheme(currentTheme==='dark'?'light':'dark'); }
+
+function clampFontScale(value){
+  const n=Number(value);
+  if(!Number.isFinite(n)) return 100;
+  return Math.min(150,Math.max(90,Math.round(n/5)*5));
+}
+function applyFontScale(value,{persist=true}={}){
+  const next=clampFontScale(value);
+  document.documentElement.style.setProperty('--font-scale',String(next/100));
+  if(els.fontSizeSlider) els.fontSizeSlider.value=String(next);
+  if(els.fontSizeValue) els.fontSizeValue.textContent=`${next}%`;
+  if(persist) localStorage.setItem(FONT_SCALE_KEY,String(next));
+  return next;
+}
+function initFontScale(){
+  const saved=clampFontScale(localStorage.getItem(FONT_SCALE_KEY) || 100);
+  applyFontScale(saved,{persist:false});
+}
 
 function escapeHtml(v=''){ return String(v).replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c])); }
 function showToast(message, error=false){ els.toast.textContent=message; els.toast.className='toast show'+(error?' error':''); setTimeout(()=>els.toast.className='toast',3000); }
@@ -522,7 +541,9 @@ function refreshCategories(){
 }
 
 updateThemeButton();
+initFontScale();
 els.themeToggle?.addEventListener('click',toggleTheme);
+els.fontSizeSlider?.addEventListener('input',event=>applyFontScale(event.target.value));
 
 const debouncedSearchRender=debounce(render,250);
 els.searchInput.addEventListener('input',debouncedSearchRender);
