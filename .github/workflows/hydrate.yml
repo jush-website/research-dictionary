@@ -18,7 +18,7 @@ jobs:
       - name: Rebuild source archive
         shell: bash
         run: |
-          cat bootstrap/part*.txt | tr -d '\n\r' | base64 -d > source.zip
+          cat bootstrap/*.b64 | tr -d '\n\r' | base64 -d > source.zip
           rm -rf _hydrate
           mkdir _hydrate
           unzip -q source.zip -d _hydrate
