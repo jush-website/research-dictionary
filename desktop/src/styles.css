@@ -493,3 +493,43 @@ html[data-theme="light"] .modal-backdrop{background:rgba(31,45,54,.32)}
   .footer{align-items:flex-start;flex-direction:column}
   .footer-actions{width:100%;justify-content:flex-end}
 }
+
+
+/* v0.5.2: compact dictionary toolbar */
+.compact-search{padding-top:10px;padding-bottom:8px}
+.compact-search .search-box{height:44px}
+.compact-toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:7px;min-height:30px}
+.lookup-hint{display:flex;align-items:center;gap:6px;color:#7d8ea3;font-size:calc(9.5px * var(--font-scale));white-space:nowrap}
+.lookup-hint b{color:#a8b8c9;font-weight:600}
+.compact-toolbar-actions{display:flex;align-items:center;justify-content:flex-end;gap:5px;min-width:0}
+.toolbar-btn{
+  height:29px;border:1px solid var(--line);border-radius:8px;padding:0 9px;
+  background:#0e1826;color:#8fa1b4;cursor:pointer;
+  font-size:calc(9.2px * var(--font-scale));white-space:nowrap
+}
+.toolbar-btn:hover,.toolbar-btn.active{border-color:rgba(87,214,156,.28);color:#cfe0db;background:#122031}
+.toolbar-btn.accent{background:rgba(87,214,156,.11);border-color:rgba(87,214,156,.24);color:#7fdfb5}
+.dot-only{gap:0;padding:0 2px}
+.dot-only i{width:7px;height:7px}
+.account-inline{display:flex;align-items:center;gap:5px;min-width:0}
+.account-inline .avatar{width:26px;height:26px;border-radius:8px;font-size:calc(9px * var(--font-scale))}
+.account-name{max-width:150px;color:#8fa0b4!important;font-size:calc(9.2px * var(--font-scale))!important;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.login-error{
+  max-width:94px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  color:#e69d9d;font-size:calc(8.8px * var(--font-scale))
+}
+.compact-search .filter-row{margin-top:7px}
+.compact-search+.content{padding-top:2px}
+.shell{grid-template-rows:auto auto minmax(0,1fr) auto}
+.content{padding-bottom:10px}
+.result-head{padding-top:4px;padding-bottom:7px}
+.term-list{gap:8px}
+.term-card .term-open{padding-top:11px;padding-bottom:10px}
+@media(max-width:620px){
+  .compact-toolbar{align-items:flex-start}
+  .lookup-hint span{display:none}
+  .account-name{display:none!important}
+  .compact-toolbar-actions{flex-wrap:wrap}
+}
+html[data-theme="light"] .toolbar-btn{background:#fff;color:#687b88;border-color:rgba(26,55,74,.12)}
+html[data-theme="light"] .toolbar-btn.accent{background:rgba(21,149,103,.08);border-color:rgba(21,149,103,.18);color:#14845f}
