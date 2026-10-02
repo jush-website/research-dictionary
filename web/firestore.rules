@@ -48,8 +48,8 @@ service cloud.firestore {
     // 桌面版 Google 登入一次性接力文件。
     // sessionId 為桌面端產生的高強度隨機值；禁止列舉，只允許精確 get。
     match /desktop_login_sessions/{sessionId} {
-      allow get: if resource.data.expiresAtMs is int
-        && request.time.toMillis() < resource.data.expiresAtMs;
+      allow get: if resource.data.expiresAt is timestamp
+        && request.time < resource.data.expiresAt;
       allow list: if false;
 
       allow create: if signedIn()
