@@ -5,6 +5,9 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
+use serde::Deserialize;
+use sha2::{Digest, Sha256};
+
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
@@ -130,78 +133,106 @@ fn is_newer_version(latest: &str, current: &str) -> bool {
     parse_version(latest) > parse_version(current)
 }
 
+#[derive(Debug, Deserialize)]
+struct ReleaseAsset {
+    name: String,
+    browser_download_url: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct ReleaseInfo {
+    tag_name: String,
+    assets: Vec<ReleaseAsset>,
+}
+
+fn update_client() -> Result<reqwest::blocking::Client, String> {
+    reqwest::blocking::Client::builder()
+        .user_agent("ResearchDictionaryDesktop")
+        .timeout(Duration::from_secs(45))
+        .build()
+        .map_err(|e| format!("無法建立更新連線：{e}"))
+}
+
 fn ps_quote(value: &str) -> String {
     value.replace('\'', "''")
 }
 
 #[tauri::command]
 fn check_for_update(current_version: String) -> Result<Option<Vec<String>>, String> {
-    #[cfg(not(target_os = "windows"))]
-    {
-        let _ = current_version;
+    let client = update_client()?;
+
+    let release = client
+        .get(RELEASE_API)
+        .send()
+        .map_err(|e| format!("無法連線 GitHub Release：{e}"))?
+        .error_for_status()
+        .map_err(|e| format!("GitHub Release 回應錯誤：{e}"))?
+        .json::<ReleaseInfo>()
+        .map_err(|e| format!("無法解析 GitHub Release：{e}"))?;
+
+    let latest = release
+        .tag_name
+        .trim()
+        .trim_start_matches("desktop-v")
+        .trim_start_matches('v')
+        .to_string();
+
+    if !is_newer_version(&latest, &current_version) {
         return Ok(None);
     }
 
-    #[cfg(target_os = "windows")]
+    let setup = release
+        .assets
+        .iter()
+        .find(|asset| asset.name.to_ascii_lowercase().ends_with("_x64-setup.exe"))
+        .ok_or_else(|| "找不到 Windows x64 NSIS 安裝檔。".to_string())?;
+
+    if !setup
+        .browser_download_url
+        .starts_with(RELEASE_DOWNLOAD_PREFIX)
     {
-        let script = format!(
-            r#"[Console]::OutputEncoding=[System.Text.Encoding]::UTF8;
-$ErrorActionPreference='Stop';
-$headers=@{{'User-Agent'='ResearchDictionaryDesktop'}};
-$r=Invoke-RestMethod -Uri '{api}' -Headers $headers;
-$version=($r.tag_name -replace '^desktop-v','');
-$asset=$r.assets | Where-Object {{ $_.name -match '(?i)_x64-setup\.exe$' }} | Select-Object -First 1;
-if(-not $asset) {{ throw '找不到 Windows x64 NSIS 安裝檔。' }}
-$digest='';
-$checksum=$r.assets | Where-Object {{ $_.name -eq 'SHA256SUMS.txt' }} | Select-Object -First 1;
-if($checksum) {{
-  $text=(Invoke-WebRequest -Uri $checksum.browser_download_url -Headers $headers).Content;
-  $line=$text -split '\r?\n' | Where-Object {{ $_ -match [regex]::Escape($asset.name) }} | Select-Object -First 1;
-  if($line) {{ $digest=($line.Trim() -split '\s+')[0].ToLowerInvariant(); }}
-}}
-Write-Output $version;
-Write-Output $asset.browser_download_url;
-Write-Output $digest;"#,
-            api = RELEASE_API
-        );
-
-        let output = Command::new("powershell.exe")
-            .args([
-                "-NoProfile",
-                "-NonInteractive",
-                "-ExecutionPolicy",
-                "Bypass",
-                "-Command",
-                &script,
-            ])
-            .output()
-            .map_err(|e| format!("無法啟動更新檢查：{e}"))?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(format!("GitHub Release 檢查失敗：{}", stderr.trim()));
-        }
-
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let mut lines = stdout.lines().map(str::trim);
-        let latest = lines.next().unwrap_or("").to_string();
-        let download_url = lines.next().unwrap_or("").to_string();
-        let digest = lines.next().unwrap_or("").to_string();
-
-        if latest.is_empty() || download_url.is_empty() || digest.is_empty() {
-            return Err("GitHub Release 更新資訊或 SHA-256 校驗碼尚未就緒。".to_string());
-        }
-
-        if !download_url.starts_with(RELEASE_DOWNLOAD_PREFIX) {
-            return Err("更新下載網址不是允許的 GitHub Release 網址。".to_string());
-        }
-
-        if !is_newer_version(&latest, &current_version) {
-            return Ok(None);
-        }
-
-        Ok(Some(vec![latest, download_url, digest]))
+        return Err("更新下載網址不是允許的 GitHub Release 網址。".to_string());
     }
+
+    let checksum_asset = release
+        .assets
+        .iter()
+        .find(|asset| asset.name == "SHA256SUMS.txt")
+        .ok_or_else(|| "找不到 SHA256SUMS.txt。".to_string())?;
+
+    let checksum_text = client
+        .get(&checksum_asset.browser_download_url)
+        .send()
+        .map_err(|e| format!("無法下載 SHA-256 校驗碼：{e}"))?
+        .error_for_status()
+        .map_err(|e| format!("SHA-256 校驗碼下載失敗：{e}"))?
+        .text()
+        .map_err(|e| format!("無法讀取 SHA-256 校驗碼：{e}"))?;
+
+    let digest = checksum_text
+        .lines()
+        .find_map(|line| {
+            let line = line.trim();
+            let mut parts = line.split_whitespace();
+            let hash = parts.next()?;
+            let name = parts.collect::<Vec<_>>().join(" ");
+            if name == setup.name {
+                Some(hash.to_ascii_lowercase())
+            } else {
+                None
+            }
+        })
+        .ok_or_else(|| format!("SHA256SUMS.txt 找不到 {} 的校驗碼。", setup.name))?;
+
+    if digest.len() != 64 || !digest.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err("SHA-256 校驗碼格式不正確。".to_string());
+    }
+
+    Ok(Some(vec![
+        latest,
+        setup.browser_download_url.clone(),
+        digest,
+    ]))
 }
 
 #[tauri::command]
@@ -218,10 +249,38 @@ fn install_update(
 
     #[cfg(target_os = "windows")]
     {
+        use std::os::windows::process::CommandExt;
+
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+
         if !download_url.starts_with(RELEASE_DOWNLOAD_PREFIX)
             || !download_url.to_ascii_lowercase().ends_with(".exe")
         {
             return Err("更新下載網址不合法。".to_string());
+        }
+
+        let expected = digest.trim().to_ascii_lowercase();
+        if expected.len() != 64 || !expected.chars().all(|c| c.is_ascii_hexdigit()) {
+            return Err("更新檔 SHA-256 格式不正確。".to_string());
+        }
+
+        let client = update_client()?;
+        let response = client
+            .get(&download_url)
+            .send()
+            .map_err(|e| format!("無法下載更新檔：{e}"))?
+            .error_for_status()
+            .map_err(|e| format!("更新檔下載失敗：{e}"))?;
+
+        let bytes = response
+            .bytes()
+            .map_err(|e| format!("無法讀取更新檔：{e}"))?;
+
+        let actual = format!("{:x}", Sha256::digest(&bytes));
+        if actual != expected {
+            return Err(format!(
+                "更新檔 SHA-256 驗證失敗。預期 {expected}，實際 {actual}"
+            ));
         }
 
         let stamp = SystemTime::now()
@@ -236,60 +295,8 @@ fn install_update(
         let installer = temp_dir.join("ResearchDictionary-Setup.exe");
         let updater_script = temp_dir.join("install-update.ps1");
 
-        let download_script = format!(
-            "$ErrorActionPreference='Stop';$headers=@{{'User-Agent'='ResearchDictionaryDesktop'}};Invoke-WebRequest -Uri '{}' -Headers $headers -OutFile '{}';",
-            ps_quote(&download_url),
-            ps_quote(&installer.to_string_lossy())
-        );
-
-        let download = Command::new("powershell.exe")
-            .args([
-                "-NoProfile",
-                "-NonInteractive",
-                "-ExecutionPolicy",
-                "Bypass",
-                "-Command",
-                &download_script,
-            ])
-            .output()
-            .map_err(|e| format!("無法下載更新：{e}"))?;
-
-        if !download.status.success() || !installer.exists() {
-            let stderr = String::from_utf8_lossy(&download.stderr);
-            return Err(format!("更新檔下載失敗：{}", stderr.trim()));
-        }
-
-        let expected = digest.trim().to_ascii_lowercase();
-        if !expected.is_empty() {
-            let hash_script = format!(
-                "(Get-FileHash -Algorithm SHA256 -LiteralPath '{}').Hash.ToLowerInvariant()",
-                ps_quote(&installer.to_string_lossy())
-            );
-            let hash_output = Command::new("powershell.exe")
-                .args([
-                    "-NoProfile",
-                    "-NonInteractive",
-                    "-ExecutionPolicy",
-                    "Bypass",
-                    "-Command",
-                    &hash_script,
-                ])
-                .output()
-                .map_err(|e| format!("無法驗證更新檔：{e}"))?;
-
-            if !hash_output.status.success() {
-                return Err("無法計算更新檔 SHA-256。".to_string());
-            }
-
-            let actual = String::from_utf8_lossy(&hash_output.stdout)
-                .trim()
-                .to_ascii_lowercase();
-
-            if actual != expected {
-                let _ = fs::remove_file(&installer);
-                return Err("更新檔 SHA-256 驗證失敗，已取消安裝。".to_string());
-            }
-        }
+        fs::write(&installer, &bytes)
+            .map_err(|e| format!("無法寫入更新檔：{e}"))?;
 
         let script = format!(
             r#"$ErrorActionPreference='Stop'
@@ -322,9 +329,13 @@ Remove-Item -LiteralPath $folder -Force -Recurse -ErrorAction SilentlyContinue
             .map_err(|e| format!("無法建立更新安裝腳本：{e}"))?;
 
         let updater_script_text = updater_script.to_string_lossy().to_string();
+
         Command::new("powershell.exe")
+            .creation_flags(CREATE_NO_WINDOW)
             .args([
+                "-NoLogo",
                 "-NoProfile",
+                "-NonInteractive",
                 "-ExecutionPolicy",
                 "Bypass",
                 "-WindowStyle",
