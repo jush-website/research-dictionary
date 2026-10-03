@@ -20,7 +20,7 @@
       document.documentElement.style.setProperty('--font-scale', String(fontScale / 100));
     })();
   </script>
-  <link rel="stylesheet" href="./styles.css?v=20261003-tablet-v11" />
+  <link rel="stylesheet" href="./styles.css?v=20261003-mobile-menu-v13" />
 </head>
 <body>
   <div class="ambient ambient-a"></div>
@@ -31,18 +31,23 @@
       <span class="brand-mark">RD</span>
       <span><strong>Research Dictionary</strong><small>研究辭典</small></span>
     </a>
-    <nav class="top-actions">
-      <label class="font-size-control" title="調整介面字體大小">
-        <span class="font-size-label" aria-hidden="true">Aa</span>
-        <input id="fontSizeSlider" type="range" min="90" max="150" step="5" value="100" aria-label="調整字體大小" />
-        <output id="fontSizeValue" for="fontSizeSlider">100%</output>
-      </label>
+    <nav class="top-actions" aria-label="網站工具">
       <button id="themeToggle" class="theme-toggle" type="button" aria-label="切換明暗模式" title="切換明暗模式"><span class="theme-toggle-icon" aria-hidden="true"></span><span class="theme-toggle-text">深色</span></button>
-      <a id="desktopDownloadBtn" class="btn btn-ghost desktop-download-btn" href="https://github.com/jush-website/research-dictionary/releases/latest" aria-label="下載最新版 Research Dictionary Windows 桌面版" title="取得最新版 Windows 桌面版"><span aria-hidden="true">↓</span><span class="desktop-download-text">桌面版</span><small id="desktopDownloadVersion"></small></a>
-      <button id="loginBtn" class="btn btn-ghost">使用 Google 登入</button>
-      <button id="logoutBtn" class="btn btn-ghost hidden">登出</button>
-      <button id="importBtn" class="btn btn-ghost hidden">⇧ 批次匯入</button>
-      <button id="addBtn" class="btn btn-primary hidden">＋ 新增名詞</button>
+      <button id="mobileMenuBtn" class="mobile-menu-btn" type="button" aria-label="更多功能" aria-expanded="false" aria-controls="mobileActionPanel" title="更多功能">
+        <span aria-hidden="true">•••</span>
+      </button>
+      <div id="mobileActionPanel" class="secondary-actions">
+        <label class="font-size-control" title="調整介面字體大小">
+          <span class="font-size-label" aria-hidden="true">Aa</span>
+          <input id="fontSizeSlider" type="range" min="90" max="150" step="5" value="100" aria-label="調整字體大小" />
+          <output id="fontSizeValue" for="fontSizeSlider">100%</output>
+        </label>
+        <a id="desktopDownloadBtn" class="btn btn-ghost desktop-download-btn" href="https://github.com/jush-website/research-dictionary/releases/latest" aria-label="下載最新版 Research Dictionary Windows 桌面版" title="取得最新版 Windows 桌面版"><span aria-hidden="true">↓</span><span class="desktop-download-text">桌面版</span><small id="desktopDownloadVersion"></small></a>
+        <button id="loginBtn" class="btn btn-ghost">使用 Google 登入</button>
+        <button id="logoutBtn" class="btn btn-ghost hidden">登出</button>
+        <button id="importBtn" class="btn btn-ghost hidden">⇧ 批次匯入</button>
+        <button id="addBtn" class="btn btn-primary hidden">＋ 新增名詞</button>
+      </div>
     </nav>
   </header>
 
@@ -217,6 +222,6 @@
 
   <div id="toast" class="toast"></div>
 
-  <script type="module" src="./app.js?v=20261003-desktop-download-v1"></script>
+  <script type="module" src="./app.js?v=20261003-mobile-menu-v13"></script>
 </body>
 </html>
