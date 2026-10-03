@@ -83,6 +83,7 @@ jobs:
             - v0.5.5：桌面登入改用 Firebase Auth REST，繞過 Tauri WebView 的 credential 登入相容問題
             - v0.5.6：更新安裝流程完全移除 PowerShell，降低企業防毒 SONAR 誤判
             - v0.5.6：修正桌面登入在網站授權完成前就因 Firestore 權限回應而停止等待的問題
+            - v0.5.7：可上傳 JSON 檔批次匯入詞彙（預設私人，可設共享），並提供範例格式
             - Google 登入後可新增、修改、刪除自己的詞彙
             - 每筆詞彙可選私人或共享
             - 字體大小、Light / Dark、自訂全域快捷鍵

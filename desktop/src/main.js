@@ -1,4 +1,5 @@
 import './styles.css';
+import sampleImportJson from '../../web/sample-import.json?raw';
 import { initializeApp } from 'firebase/app';
 import { getFirestore, collection, doc, getDocs, getDoc } from 'firebase/firestore';
 import { invoke } from '@tauri-apps/api/core';
@@ -32,6 +33,7 @@ const AUTH_SESSION_KEY = 'research_dictionary_desktop_auth_rest_v1';
 const AUTH_SIGNIN_URL = 'https://identitytoolkit.googleapis.com/v1/accounts:signInWithIdp?key=' + firebaseConfig.apiKey;
 const AUTH_REFRESH_URL = 'https://securetoken.googleapis.com/v1/token?key=' + firebaseConfig.apiKey;
 const FIRESTORE_REST_BASE = 'https://firestore.googleapis.com/v1/projects/' + firebaseConfig.projectId + '/databases/(default)/documents';
+const FIRESTORE_DOC_PREFIX = 'projects/' + firebaseConfig.projectId + '/databases/(default)/documents/';
 const DEFAULT_SHORTCUTS = Object.freeze({
   lookup: 'Ctrl+Shift+D',
   search: 'Ctrl+Alt+D'
@@ -56,6 +58,10 @@ let scopeFilter = 'all';
 let filtersOpen = false;
 let editorOpen = false;
 let editingTerm = null;
+let importOpen = false;
+let importRows = [];
+let importShareAll = false;
+let importBusy = false;
 let loginPending = false;
 let loginSessionId = '';
 let loginPollTimer = null;
@@ -422,6 +428,161 @@ async function restDeleteDocument(path) {
   return firestoreRestFetch(path, { method: 'DELETE' });
 }
 
+// Atomic multi-document write (max 500 writes per call); security rules apply to each write.
+async function restCommit(writes) {
+  const token = await ensureFirebaseIdToken();
+  const response = await fetch(FIRESTORE_REST_BASE + ':commit', {
+    method: 'POST',
+    headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ writes })
+  });
+  if (!response.ok) {
+    const json = await response.json().catch(() => ({}));
+    throw new Error(json?.error?.message || ('Firestore HTTP ' + response.status));
+  }
+}
+
+// Same field mapping as the web batch import (web/app.js normalizeImportTerm).
+function normalizeImportTerm(raw = {}) {
+  const statusRaw = String(raw.status || 'pending').trim().toLowerCase();
+  const status = ['verified', 'confirmed', 'pending', 'candidate', 'general'].includes(statusRaw) ? statusRaw : 'pending';
+  const text = (...values) => String(values.find((v) => v !== undefined && v !== null) ?? '').trim();
+  return {
+    term_en: text(raw.term_en, raw.termEn, raw.english),
+    term_zh: text(raw.term_zh, raw.termZh, raw.chinese),
+    category: text(raw.category) || '未分類',
+    definition: text(raw.definition),
+    simple_explanation: text(raw.simple_explanation, raw.simpleExplanation),
+    example: text(raw.example),
+    research_note: text(raw.research_note, raw.researchNote),
+    source: text(raw.source),
+    sourceType: text(raw.sourceType, raw.source_type),
+    sourceDetail: text(raw.sourceDetail, raw.source_detail),
+    status,
+    is_core: toBool(raw.is_core ?? raw.isCore),
+    is_shared: toBool(raw.is_shared ?? raw.isShared)
+  };
+}
+
+// Boolean('false') is true, so accept only explicit true values from JSON.
+function toBool(value) {
+  return value === true || value === 1 || ['true', '1', 'yes'].includes(String(value).trim().toLowerCase());
+}
+
+async function readImportFile(file) {
+  let parsed;
+  try {
+    parsed = JSON.parse(await file.text());
+  } catch (error) {
+    showToast('JSON 格式錯誤：' + (error?.message || error), true);
+    return;
+  }
+  if (!Array.isArray(parsed)) parsed = [parsed];
+
+  // ponytail: exact en/zh name match only; the web importer also flags "similar" names.
+  const seen = new Set(terms.flatMap((t) => [normalize(t.term_en), normalize(t.term_zh)]).filter(Boolean));
+  const required = [['term_en', '英文名稱'], ['term_zh', '中文名稱'], ['definition', '正式定義'], ['simple_explanation', '白話解釋']];
+  importRows = parsed.map((raw) => {
+    const term = normalizeImportTerm(raw && typeof raw === 'object' ? raw : {});
+    const missing = required.filter(([key]) => !term[key]).map(([, label]) => label);
+    if (missing.length) return { kind: 'invalid', term, note: '缺少：' + missing.join('、') };
+    const keys = [normalize(term.term_en), normalize(term.term_zh)];
+    if (keys.some((key) => seen.has(key))) return { kind: 'skip', term, note: '已有相同英文或中文名稱，略過' };
+    keys.forEach((key) => seen.add(key));
+    return { kind: 'new', term, note: term.category + ' · ' + statusInfo(term.status)[1] };
+  });
+  render();
+}
+
+async function runImport() {
+  const rows = importRows.filter((row) => row.kind === 'new');
+  if (!currentUser || !rows.length || importBusy) return;
+  importBusy = true;
+  render();
+
+  const uid = currentUser.uid;
+  const now = new Date().toISOString();
+  let done = 0;
+  try {
+    // Same layout as single add: private copy always, public copy with the same id when shared.
+    // 200 terms x up to 2 writes stays under the 500-write commit limit.
+    for (let i = 0; i < rows.length; i += 200) {
+      const chunk = rows.slice(i, i + 200);
+      const writes = [];
+      chunk.forEach(({ term }) => {
+        const id = crypto.randomUUID().replace(/-/g, '');
+        const data = {
+          ...term,
+          is_shared: importShareAll || term.is_shared,
+          createdBy: uid,
+          createdByName: currentUser.displayName || '',
+          createdByEmail: currentUser.email || '',
+          createdAt: now,
+          updatedAt: now
+        };
+        const fields = firestoreFields(data);
+        writes.push({ update: { name: FIRESTORE_DOC_PREFIX + PRIVATE_ROOT + '/' + uid + '/terms/' + id, fields } });
+        if (data.is_shared) writes.push({ update: { name: FIRESTORE_DOC_PREFIX + COLLECTION_NAME + '/' + id, fields } });
+      });
+      await restCommit(writes);
+      done += chunk.length;
+    }
+    importBusy = false;
+    importOpen = false;
+    importRows = [];
+    showToast('已匯入 ' + done + ' 個詞彙');
+    await loadTerms(true);
+  } catch (error) {
+    console.error('Import failed:', error);
+    importBusy = false;
+    render();
+    showToast('匯入失敗（已完成 ' + done + ' 個）：' + (error?.message || error), true);
+  }
+}
+
+function downloadImportTemplate() {
+  const url = URL.createObjectURL(new Blob([sampleImportJson], { type: 'application/json' }));
+  const link = Object.assign(document.createElement('a'), { href: url, download: 'research-dictionary-sample-import.json' });
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 2000);
+  showToast('範例 JSON 已下載到「下載」資料夾');
+}
+
+function importTemplate() {
+  const counts = { new: 0, skip: 0, invalid: 0 };
+  importRows.forEach((row) => { counts[row.kind] += 1; });
+  const label = { new: '可新增', skip: '略過', invalid: '格式錯誤' };
+  return `
+    <div class="modal-backdrop editor-enter" id="importBackdrop">
+      <section class="editor-panel panel-enter" role="dialog" aria-modal="true" aria-labelledby="importTitle">
+        <div class="settings-head">
+          <div><span class="settings-eyebrow">IMPORT JSON</span><h2 id="importTitle">匯入研究詞彙</h2></div>
+          <button class="icon-button" id="importCloseBtn" aria-label="關閉">×</button>
+        </div>
+        <p class="settings-note">選擇 .json 檔，內容為詞彙陣列。必填 <code>term_en</code>、<code>term_zh</code>、<code>definition</code>、<code>simple_explanation</code>；選填 <code>category</code>、<code>status</code>（verified／pending／candidate）、<code>example</code>、<code>research_note</code>、<code>source</code>、<code>sourceType</code>、<code>sourceDetail</code>（沒有頁碼請留空）、<code>is_core</code>、<code>is_shared</code>（預設 false＝私人）。</p>
+        <div class="import-pick">
+          <input id="importFile" type="file" accept="application/json,.json" ${importBusy ? 'disabled' : ''}>
+          <button class="small-btn" id="importTemplateBtn">下載範例 JSON</button>
+        </div>
+        <label class="check-row"><input id="importShareAll" type="checkbox" ${importShareAll ? 'checked' : ''} ${importBusy ? 'disabled' : ''}><span>全部設為共享（忽略檔案內的 is_shared）</span></label>
+        ${importRows.length ? `
+          <div class="import-summary">共 ${importRows.length} 筆：可新增 ${counts.new}、略過 ${counts.skip}、格式錯誤 ${counts.invalid}</div>
+          <div class="import-list">${importRows.map((row) => `
+            <div class="import-row ${row.kind}">
+              <div><strong>${escapeHtml(row.term.term_en || '（未填英文）')}｜${escapeHtml(row.term.term_zh || '（未填中文）')}</strong><small>${escapeHtml(row.note)}${row.kind === 'new' ? ' · ' + ((importShareAll || row.term.is_shared) ? '共享' : '私人') : ''}</small></div>
+              <span>${label[row.kind]}</span>
+            </div>`).join('')}
+          </div>` : ''}
+        <div class="modal-actions">
+          <button type="button" class="secondary-btn" id="importCancelBtn" ${importBusy ? 'disabled' : ''}>取消</button>
+          <button type="button" class="primary-btn compact" id="importRunBtn" ${counts.new && !importBusy ? '' : 'disabled'}>${importBusy ? '匯入中…' : '匯入 ' + counts.new + ' 個詞彙'}</button>
+        </div>
+      </section>
+    </div>`;
+}
+
 function loadShortcutConfig() {
   try {
     const saved = JSON.parse(localStorage.getItem(SHORTCUT_KEY) || 'null');
@@ -675,6 +836,7 @@ function renderAccountBar() {
         <span class="avatar">${escapeHtml(initial)}</span>
         <span class="account-name" title="${escapeHtml(name)}">${escapeHtml(name)}</span>
         <button class="toolbar-btn accent" id="addTermBtn">＋ 新增</button>
+        <button class="toolbar-btn" id="importBtn">匯入</button>
         <button class="toolbar-btn" id="logoutBtn">登出</button>
       </div>`;
   }
@@ -747,6 +909,7 @@ function render() {
 
       ${settingsOpen ? settingsTemplate() : ''}
       ${editorOpen ? editorTemplate() : ''}
+      ${importOpen ? importTemplate() : ''}
       <div id="toast" class="toast" aria-live="polite"></div>
     </main>
   `;
@@ -1058,6 +1221,33 @@ function wireEvents() {
     }
   });
   document.querySelector('#termEditorForm')?.addEventListener('submit', saveEditor);
+
+  document.querySelector('#importBtn')?.addEventListener('click', () => {
+    importOpen = true;
+    importRows = [];
+    render();
+  });
+  const closeImport = () => {
+    if (importBusy) return;
+    importOpen = false;
+    importRows = [];
+    render();
+  };
+  document.querySelector('#importCloseBtn')?.addEventListener('click', closeImport);
+  document.querySelector('#importCancelBtn')?.addEventListener('click', closeImport);
+  document.querySelector('#importBackdrop')?.addEventListener('mousedown', (event) => {
+    if (event.target.id === 'importBackdrop') closeImport();
+  });
+  document.querySelector('#importFile')?.addEventListener('change', (event) => {
+    const file = event.target.files?.[0];
+    if (file) readImportFile(file);
+  });
+  document.querySelector('#importShareAll')?.addEventListener('change', (event) => {
+    importShareAll = event.target.checked;
+    render();
+  });
+  document.querySelector('#importTemplateBtn')?.addEventListener('click', downloadImportTemplate);
+  document.querySelector('#importRunBtn')?.addEventListener('click', runImport);
 
   document.querySelector('#settingsCloseBtn')?.addEventListener('click', closeSettings);
   document.querySelector('#cancelSettingsBtn')?.addEventListener('click', closeSettings);
@@ -1455,7 +1645,9 @@ window.addEventListener('keydown', (e) => {
   }
 
   if (e.key === 'Escape') {
-    if (editorOpen) {
+    if (importOpen) {
+      if (!importBusy) { importOpen = false; importRows = []; render(); }
+    } else if (editorOpen) {
       editorOpen = false;
       editingTerm = null;
       render();

@@ -372,3 +372,5 @@ html[data-theme="light"] .chip.private{color:#65449a;background:rgba(121,80,184,
   .desktop-auth-banner{width:min(100% - 24px,1180px);align-items:stretch;flex-direction:column}
   .desktop-auth-banner .btn{width:100%}
 }
+.import-share-all{display:flex!important;align-items:center;gap:8px;color:var(--muted);font-size:13px;margin:10px 0 0}.import-share-all input{width:auto;accent-color:#84a0ff}
+.import-format{margin:10px 0 0;color:var(--muted);font-size:13px;line-height:1.7}.import-format summary{cursor:pointer;color:var(--text);font-weight:600}.import-format code{color:var(--accent2)}

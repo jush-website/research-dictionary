@@ -178,7 +178,7 @@
         <div>
           <p class="eyebrow">BATCH IMPORT</p>
           <h2>匯入研究詞彙</h2>
-          <p class="modal-subtitle">貼上 ChatGPT 整理好的 JSON，系統會先檢查重複與疑似相同詞彙，再決定要不要寫入 Firestore。</p>
+          <p class="modal-subtitle">上傳 .json 檔或貼上 JSON 陣列，系統會先檢查重複與疑似相同詞彙，確認後才寫入。匯入的詞彙都屬於你的帳號；沒有寫 <code>"is_shared": true</code> 的詞彙只有你看得到。</p>
         </div>
         <button type="button" class="icon-btn" id="closeImportDialog">×</button>
       </div>
@@ -189,7 +189,14 @@
       <div class="import-toolbar">
         <label class="file-btn">從 .json 檔載入<input id="batchFile" type="file" accept="application/json,.json"></label>
         <button type="button" id="analyzeImportBtn" class="btn btn-ghost">檢查資料</button>
+        <a class="btn btn-ghost" href="sample-import.json" download="research-dictionary-sample-import.json">下載範例 JSON</a>
       </div>
+      <label class="import-share-all"><input id="importShareAll" type="checkbox"> 全部設為共享（忽略檔案內的 is_shared）</label>
+      <details class="import-format">
+        <summary>JSON 格式說明</summary>
+        <p>檔案內容是一個陣列，每個物件是一個詞彙。必填：<code>term_en</code>、<code>term_zh</code>、<code>definition</code>、<code>simple_explanation</code>。</p>
+        <p>選填：<code>category</code>（任意分類，空白為「未分類」）、<code>status</code>（<code>verified</code>／<code>pending</code>／<code>candidate</code>，預設 pending）、<code>example</code>、<code>research_note</code>、<code>source</code>、<code>sourceType</code>、<code>sourceDetail</code>（沒有頁碼請留空）、<code>is_core</code>（true／false）、<code>is_shared</code>（true／false，預設 false）。</p>
+      </details>
 
       <div id="importSummary" class="import-summary hidden"></div>
       <div id="importPreview" class="import-preview hidden"></div>

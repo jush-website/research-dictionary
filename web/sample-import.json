@@ -1,14 +1,32 @@
 [
   {
-    "term_en": "Example Term",
-    "term_zh": "範例名詞",
-    "category": "Query / Drift",
-    "definition": "較正式的定義。",
-    "simple_explanation": "用比較好懂的方式解釋這個名詞。",
-    "example": "可以放研究中的實際例子。",
-    "research_note": "這個名詞與目前研究方向的關係。",
-    "source": "論文名稱、章節或其他來源",
-    "status": "pending",
-    "is_core": false
+    "term_en": "Retrieval-Augmented Generation",
+    "term_zh": "檢索增強生成",
+    "category": "RAG",
+    "status": "verified",
+    "definition": "結合參數化語言模型與非參數化外部檢索記憶的生成方法：先依輸入檢索相關文件，再以檢索結果作為條件生成回答。",
+    "simple_explanation": "先去資料庫找資料，再根據找到的資料回答，而不是只靠模型自己記得的內容。",
+    "example": "問答系統先從論文庫檢索三段相關段落，再把段落連同問題一起交給 LLM 生成答案。",
+    "research_note": "本研究的檢索與生成流程以此為基礎架構。",
+    "source": "Lewis et al., Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks, NeurIPS 2020",
+    "sourceType": "Paper",
+    "sourceDetail": "",
+    "is_core": true,
+    "is_shared": false
+  },
+  {
+    "term_en": "Example Working Concept",
+    "term_zh": "範例工作定義",
+    "category": "任何新分類都可以",
+    "status": "candidate",
+    "definition": "研究者自行提出、尚未有正式來源定義的概念，請使用 candidate。",
+    "simple_explanation": "這是格式示範，匯入前請刪除或改成你的詞彙。",
+    "example": "",
+    "research_note": "",
+    "source": "",
+    "sourceType": "",
+    "sourceDetail": "",
+    "is_core": false,
+    "is_shared": false
   }
 ]

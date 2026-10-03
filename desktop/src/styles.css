@@ -551,3 +551,18 @@ html[data-theme="light"] .toolbar-btn.accent{background:rgba(21,149,103,.08);bor
 }
 .login-error:hover{border-color:rgba(255,133,133,.38);color:#ffc0c0}
 html[data-theme="light"] .login-error{background:rgba(190,63,63,.06);border-color:rgba(190,63,63,.16);color:#a74646}
+
+/* JSON import dialog */
+.import-pick{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:6px 0 10px}
+.import-pick input[type=file]{flex:1;min-width:200px;font-size:calc(11px * var(--font-scale))}
+.settings-note code{color:#80e4c4}
+.import-summary{margin:12px 0 8px;font-size:calc(11px * var(--font-scale));font-weight:600}
+.import-list{max-height:min(42vh,320px);overflow:auto;border:1px solid rgba(255,255,255,.08);border-radius:10px}
+.import-row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 10px;border-bottom:1px solid rgba(255,255,255,.06);font-size:calc(11px * var(--font-scale))}
+.import-row:last-child{border-bottom:0}
+.import-row small{display:block;color:#8fa0b4;margin-top:2px}
+.import-row>span{white-space:nowrap;font-size:calc(10px * var(--font-scale))}
+.import-row.new>span{color:#80e4c4}.import-row.skip>span{color:#ffd27a}.import-row.invalid>span{color:#ff8d9b}
+html[data-theme="light"] .import-list,html[data-theme="light"] .import-row{border-color:rgba(0,0,0,.08)}
+html[data-theme="light"] .import-row small{color:#6c7c89}
+html[data-theme="light"] .settings-note code{color:#127a5c}

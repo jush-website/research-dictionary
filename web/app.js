@@ -44,7 +44,7 @@ const els = {
   termId:$('termId'), termEn:$('termEn'), termZh:$('termZh'), category:$('category'), status:$('status'), definition:$('definition'), simpleExplanation:$('simpleExplanation'), example:$('example'), researchNote:$('researchNote'), source:$('source'), sourceType:$('sourceType'), sourceDetail:$('sourceDetail'), isCore:$('isCore'), isShared:$('isShared'), duplicateHint:$('duplicateHint'), saveTermBtn:$('saveTermBtn'),
   detailDialog:$('detailDialog'), detailContent:$('detailContent'), toast:$('toast'), categoryList:$('categoryList'),
   themeToggle:$('themeToggle'), fontSizeSlider:$('fontSizeSlider'), fontSizeValue:$('fontSizeValue'),
-  importDialog:$('importDialog'), closeImportDialog:$('closeImportDialog'), cancelImportDialog:$('cancelImportDialog'), batchJson:$('batchJson'), batchFile:$('batchFile'), analyzeImportBtn:$('analyzeImportBtn'), importSummary:$('importSummary'), importPreview:$('importPreview'), executeImportBtn:$('executeImportBtn'),
+  importDialog:$('importDialog'), closeImportDialog:$('closeImportDialog'), cancelImportDialog:$('cancelImportDialog'), batchJson:$('batchJson'), batchFile:$('batchFile'), importShareAll:$('importShareAll'), analyzeImportBtn:$('analyzeImportBtn'), importSummary:$('importSummary'), importPreview:$('importPreview'), executeImportBtn:$('executeImportBtn'),
   desktopAuthBanner:$('desktopAuthBanner'), desktopAuthTitle:$('desktopAuthTitle'), desktopAuthText:$('desktopAuthText'), desktopAuthorizeBtn:$('desktopAuthorizeBtn')
 };
 
@@ -381,9 +381,14 @@ function normalizeImportTerm(raw={}){
     sourceType:String(raw.sourceType ?? raw.source_type ?? '').trim(),
     sourceDetail:String(raw.sourceDetail ?? raw.source_detail ?? '').trim(),
     status,
-    is_core:Boolean(raw.is_core ?? raw.isCore ?? false),
-    is_shared:raw.is_shared ?? raw.isShared ?? true
+    is_core:toBool(raw.is_core ?? raw.isCore),
+    is_shared:toBool(raw.is_shared ?? raw.isShared)
   };
+}
+
+// Boolean('false') is true, so accept only explicit true values from JSON.
+function toBool(value){
+  return value===true || value===1 || ['true','1','yes'].includes(String(value).trim().toLowerCase());
 }
 
 function validateImportTerm(t){
@@ -467,16 +472,23 @@ function analyzeBatchJson(){
 }
 
 async function executeBatchImport(){
-  if(!currentUser || currentUser.uid!==ADMIN_UID){ showToast('只有管理員可以批次匯入',true); return; }
+  if(!currentUser){ showToast('請先登入才能匯入',true); return; }
   const rows=pendingImportRows.filter(r=>r.kind==='new' || (r.kind==='review' && r.force));
   if(!rows.length){ showToast('沒有可匯入的詞彙',true); return; }
+  const uid=currentUser.uid;
+  const shareAll=!!els.importShareAll?.checked;
   els.executeImportBtn.disabled=true; els.executeImportBtn.textContent='匯入中…';
   try{
-    for(let i=0;i<rows.length;i+=400){
+    // Same layout as single add: private copy always, public copy with the same id when shared.
+    // 200 terms x up to 2 writes stays under Firestore's 500-op batch limit.
+    for(let i=0;i<rows.length;i+=200){
       const batch=writeBatch(db);
-      rows.slice(i,i+400).forEach(({term})=>{
-        const ref=doc(termsRef);
-        batch.set(ref,{...term,is_shared:true,createdBy:currentUser.uid,createdByName:currentUser.displayName||'',createdByEmail:currentUser.email||'',createdAt:serverTimestamp(),updatedAt:serverTimestamp()});
+      rows.slice(i,i+200).forEach(({term})=>{
+        const ref=doc(personalTermsCollection(uid));
+        const isShared=shareAll || term.is_shared;
+        const data={...term,is_shared:isShared,createdBy:uid,createdByName:currentUser.displayName||'',createdByEmail:currentUser.email||'',createdAt:serverTimestamp(),updatedAt:serverTimestamp()};
+        batch.set(ref,data);
+        if(isShared) batch.set(doc(termsRef,ref.id),data);
       });
       await batch.commit();
     }
@@ -527,7 +539,7 @@ onAuthStateChanged(auth, user => {
   els.loginBtn.classList.toggle('hidden', !!user);
   els.logoutBtn.classList.toggle('hidden', !user);
   els.addBtn.classList.toggle('hidden', !user);
-  els.importBtn.classList.toggle('hidden', !(user && user.uid === ADMIN_UID));
+  els.importBtn.classList.toggle('hidden', !user);
   els.mineWrap.classList.toggle('hidden', !user);
   if(!user) els.mineOnly.checked=false;
   subscribePrivateTerms(user);

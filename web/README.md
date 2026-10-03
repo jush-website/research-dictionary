@@ -9,7 +9,7 @@
 - 建立者可修改／刪除自己的詞條
 - 管理員可修改／刪除所有詞條
 - 一般新增時自動檢查「完全重複」與「疑似相同」詞彙
-- 管理員專用「批次匯入」
+- 登入使用者都可「批次匯入」（.json 檔或貼上），詞彙歸屬於匯入者；預設私人，`"is_shared": true` 或勾「全部設為共享」才同步公開副本（Desktop 也有「匯入」）
 - 批次匯入會分成：可新增、已存在、疑似重複、格式問題
 - 疑似重複預設不匯入，需手動勾選「仍要匯入」
 - 支援狀態：已確認、待確認、候選概念、一般詞彙
@@ -23,7 +23,7 @@
 - `definition`
 - `simple_explanation`
 
-其餘欄位：`category`、`example`、`research_note`、`source`、`status`、`is_core`。
+其餘欄位：`category`、`example`、`research_note`、`source`、`sourceType`、`sourceDetail`（沒有頁碼請留空）、`status`（verified／pending／candidate）、`is_core`、`is_shared`（預設 false）。
 
 ## 更新 Vercel
 
