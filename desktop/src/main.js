@@ -28,6 +28,8 @@ const THEME_KEY = 'research_dictionary_desktop_theme_v1';
 const UPDATE_CHECK_KEY = 'research_dictionary_desktop_update_check_v1';
 const LAST_UPDATE_CHECK_KEY = 'research_dictionary_desktop_last_update_check_v1';
 const FONT_SCALE_KEY = 'research_dictionary_desktop_font_scale_v1';
+const DISPLAY_LIMIT_KEY = 'research_dictionary_desktop_display_limit_v1';
+const DISPLAY_LIMIT_OPTIONS = Object.freeze([36, 72, 144, 300, 0]);
 const AUTH_SESSION_KEY = 'research_dictionary_desktop_auth_rest_v1';
 const AUTH_SIGNIN_URL = 'https://identitytoolkit.googleapis.com/v1/accounts:signInWithIdp?key=' + firebaseConfig.apiKey;
 const AUTH_REFRESH_URL = 'https://securetoken.googleapis.com/v1/token?key=' + firebaseConfig.apiKey;
@@ -79,6 +81,7 @@ let hotkeyError = '';
 let toastTimer = null;
 let theme = loadTheme();
 let fontScale = loadFontScale();
+let displayLimit = loadDisplayLimit();
 
 applyTheme(theme, false);
 applyFontScale(fontScale, false);
@@ -166,7 +169,7 @@ function scopeMatches(term) {
   return true;
 }
 
-function getResults() {
+function getAllResults() {
   return terms
     .map((term) => ({ term, score: scoreTerm(term, searchText) }))
     .filter(({term, score}) =>
@@ -180,8 +183,12 @@ function getResults() {
       Number(b.term.is_core) - Number(a.term.is_core) ||
       String(a.term.term_en || '').localeCompare(String(b.term.term_en || ''))
     )
-    .slice(0, searchText ? 60 : 36)
     .map((x) => x.term);
+}
+
+function getResults() {
+  const allResults = getAllResults();
+  return displayLimit === 0 ? allResults : allResults.slice(0, displayLimit);
 }
 
 function categories() {
@@ -655,6 +662,18 @@ function applyFontScale(value, persist = true) {
   document.documentElement.style.setProperty('--font-scale', String(next / 100));
   if (persist) localStorage.setItem(FONT_SCALE_KEY, String(next));
   return next;
+}
+
+function loadDisplayLimit() {
+  const saved = Number(localStorage.getItem(DISPLAY_LIMIT_KEY));
+  return DISPLAY_LIMIT_OPTIONS.includes(saved) ? saved : 72;
+}
+
+function applyDisplayLimit(value, persist = true) {
+  const parsed = Number(value);
+  displayLimit = DISPLAY_LIMIT_OPTIONS.includes(parsed) ? parsed : 72;
+  if (persist) localStorage.setItem(DISPLAY_LIMIT_KEY, String(displayLimit));
+  return displayLimit;
 }
 
 function toggleTheme() {
