@@ -509,6 +509,7 @@ async function startDesktopLogin() {
   }
 
   let attempts = 0;
+  let lastPollError = '';
   const poll = async () => {
     if (!loginPending || !loginSessionId) return;
     attempts += 1;
@@ -543,14 +544,9 @@ async function startDesktopLogin() {
       }
     } catch (error) {
       const text = String(error?.message || error);
-      if (/permission|permissions|insufficient/i.test(text)) {
-        loginPending = false;
-        loginMessage = '';
-        loginError = 'Firestore 權限不足。請重新發布最新版 Security Rules。';
-        showToast(loginError, true);
-        render();
-        return;
-      }
+      // Rules only allow get on an existing, unexpired session, so a missing
+      // document (web login not finished yet) also returns permission-denied.
+      // Keep polling; only surface it if we time out.
       if (/逾時|OAuth 交換失敗|憑證/.test(text)) {
         loginPending = false;
         loginMessage = '';
@@ -559,13 +555,14 @@ async function startDesktopLogin() {
         render();
         return;
       }
-      console.warn('Desktop login polling:', error);
+      lastPollError = (error?.code ? error.code + '：' : '') + text;
+      if (!/permission|insufficient/i.test(text)) console.warn('Desktop login polling:', error);
     }
 
     if (attempts >= 120) {
       loginPending = false;
       loginMessage = '';
-      loginError = '登入等待逾時，請重新操作。';
+      loginError = '登入等待逾時，請重新操作。' + (lastPollError ? '（最後回應：' + lastPollError + '）' : '');
       loginSessionId = '';
       showToast(loginError, true);
       render();
