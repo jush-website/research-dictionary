@@ -48,6 +48,18 @@ jobs:
         working-directory: desktop/src-tauri
         run: cargo test --lib
 
+      - name: Verify packaged updater has no PowerShell dependency
+        shell: pwsh
+        run: |
+          $files = @('desktop/src-tauri/src/lib.rs','desktop/src-tauri/src/main.rs')
+          $matches = Select-String -Path $files -Pattern 'powershell\.exe|install-update\.ps1|Invoke-WebRequest|Start-Process' -CaseSensitive:$false
+          if ($matches) {
+            $matches | ForEach-Object { Write-Host "$($_.Path):$($_.LineNumber) $($_.Line)" }
+            throw 'Desktop updater still contains a PowerShell/script dependency.'
+          }
+          Write-Host '[OK] Shipping updater path has no PowerShell dependency.'
+
+
       - name: Build and publish Tauri installers
         uses: tauri-apps/tauri-action@v1
         env:
@@ -63,6 +75,7 @@ jobs:
             - v0.5.2：精簡上方工具列，增加詞彙閱讀空間
             - v0.5.2：改善桌面 Google 登入接力與錯誤提示
             - v0.5.5：桌面登入改用 Firebase Auth REST，繞過 Tauri WebView 的 credential 登入相容問題
+            - v0.5.6：更新安裝流程完全移除 PowerShell，降低企業防毒 SONAR 誤判
             - Google 登入後可新增、修改、刪除自己的詞彙
             - 每筆詞彙可選私人或共享
             - 字體大小、Light / Dark、自訂全域快捷鍵
