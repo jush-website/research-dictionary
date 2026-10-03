@@ -1,4 +1,5 @@
 [package]
+# Release CI retry marker for v0.5.10
 name = "research-dictionary-desktop"
 version = "0.5.10"
 description = "Windows quick lookup companion for Research Dictionary"
