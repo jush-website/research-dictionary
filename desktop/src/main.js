@@ -1,7 +1,6 @@
 import './styles.css';
 import { initializeApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, signInWithCredential, signOut, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, collection, doc, getDocs, getDoc, setDoc, updateDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
+import { getFirestore, collection, doc, getDocs, getDoc } from 'firebase/firestore';
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { getVersion } from '@tauri-apps/api/app';
@@ -29,13 +28,16 @@ const THEME_KEY = 'research_dictionary_desktop_theme_v1';
 const UPDATE_CHECK_KEY = 'research_dictionary_desktop_update_check_v1';
 const LAST_UPDATE_CHECK_KEY = 'research_dictionary_desktop_last_update_check_v1';
 const FONT_SCALE_KEY = 'research_dictionary_desktop_font_scale_v1';
+const AUTH_SESSION_KEY = 'research_dictionary_desktop_auth_rest_v1';
+const AUTH_SIGNIN_URL = 'https://identitytoolkit.googleapis.com/v1/accounts:signInWithIdp?key=' + firebaseConfig.apiKey;
+const AUTH_REFRESH_URL = 'https://securetoken.googleapis.com/v1/token?key=' + firebaseConfig.apiKey;
+const FIRESTORE_REST_BASE = 'https://firestore.googleapis.com/v1/projects/' + firebaseConfig.projectId + '/databases/(default)/documents';
 const DEFAULT_SHORTCUTS = Object.freeze({
   lookup: 'Ctrl+Shift+D',
   search: 'Ctrl+Alt+D'
 });
 
 const firebaseApp = initializeApp(firebaseConfig);
-const auth = getAuth(firebaseApp);
 const db = getFirestore(firebaseApp);
 const appWindow = getCurrentWindow();
 
@@ -43,6 +45,7 @@ let publicTerms = [];
 let privateTerms = [];
 let terms = [];
 let currentUser = null;
+let authSession = null;
 let searchText = '';
 let selectedTerm = null;
 let loading = true;
