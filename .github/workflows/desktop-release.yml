@@ -66,6 +66,14 @@ jobs:
           Write-Host '[OK] Shipping updater path has no PowerShell dependency.'
 
 
+      - name: Verify desktop display limit is not hard-coded
+        shell: pwsh
+        run: |
+          $source = Get-Content 'desktop/src/main.js' -Raw
+          if ($source -match '\.slice\(0,\s*searchText\s*\?\s*60\s*:\s*36\)') { throw 'Legacy 36/60 hard-coded result cap is still present.' }
+          if ($source -notmatch 'displayLimitFilter' -or $source -notmatch 'DISPLAY_LIMIT_KEY') { throw 'Display limit selector/persistence is missing.' }
+          Write-Host '[OK] Desktop display count is configurable and persistent.'
+
       - name: Build and publish Tauri installers
         uses: tauri-apps/tauri-action@v1
         env:
@@ -86,6 +94,7 @@ jobs:
             - v0.5.7：可上傳 JSON 檔批次匯入詞彙（預設私人，可設共享），並提供範例格式
             - v0.5.8：公開詞彙改用 Firestore REST 讀取，修正連線異常時只顯示自己私人詞彙的問題
             - v0.5.9：可見範圍新增「登入可見」（私人／登入可見／共享），匯入時可一次指定
+            - v0.5.10：修正桌面版固定只顯示 36 筆，顯示筆數可選 36／72／144／300／全部並記住設定
             - Google 登入後可新增、修改、刪除自己的詞彙
             - 每筆詞彙可選私人或共享
             - 字體大小、Light / Dark、自訂全域快捷鍵
