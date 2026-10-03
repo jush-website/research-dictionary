@@ -621,3 +621,27 @@ html[data-theme="light"] .chip.private{color:#65449a;background:rgba(121,80,184,
   .top-actions{width:100%;flex:1 1 100%;justify-content:flex-start}
   .font-size-control{width:100%;flex:1 1 100%}
 }
+
+
+/* v12: latest desktop download button */
+.desktop-download-btn{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:6px;
+  text-decoration:none;
+  white-space:nowrap;
+}
+.desktop-download-btn small{
+  color:var(--muted);
+  font-size:calc(10px * var(--font-scale));
+  font-weight:600;
+}
+.desktop-download-btn:hover small{color:inherit}
+@media(max-width:820px){
+  .desktop-download-btn{flex:0 0 auto}
+}
+@media(max-width:620px){
+  .desktop-download-btn{padding:8px 10px}
+  .desktop-download-btn small{display:none}
+}
