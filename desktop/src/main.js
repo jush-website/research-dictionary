@@ -1,7 +1,5 @@
 import './styles.css';
 import sampleImportJson from '../../web/sample-import.json?raw';
-import { initializeApp } from 'firebase/app';
-import { getFirestore, collection, doc, getDocs, getDoc } from 'firebase/firestore';
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { getVersion } from '@tauri-apps/api/app';
@@ -39,8 +37,6 @@ const DEFAULT_SHORTCUTS = Object.freeze({
   search: 'Ctrl+Alt+D'
 });
 
-const firebaseApp = initializeApp(firebaseConfig);
-const db = getFirestore(firebaseApp);
 const appWindow = getCurrentWindow();
 
 let publicTerms = [];
@@ -408,13 +404,28 @@ async function firestoreRestFetch(path, options = {}, retry = true) {
   return response.json().catch(() => null);
 }
 
+// Lists every document in a collection, following nextPageToken. Errors throw instead of
+// returning an empty list. Public reads need no token; private reads pass the user's ID token.
+async function restListDocuments(path, token = '') {
+  const documents = [];
+  let pageToken = '';
+  do {
+    const url = FIRESTORE_REST_BASE + '/' + encodeFirestorePath(path) + '?pageSize=300' + (pageToken ? '&pageToken=' + encodeURIComponent(pageToken) : '');
+    const response = await fetch(url, token ? { headers: { Authorization: 'Bearer ' + token } } : undefined);
+    const json = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(json?.error?.message || ('Firestore HTTP ' + response.status));
+    (json.documents || []).forEach((entry) => documents.push({
+      id: entry.name.split('/').pop(),
+      ...fromFirestoreFields(entry.fields || {})
+    }));
+    pageToken = json.nextPageToken || '';
+  } while (pageToken);
+  return documents;
+}
+
 async function listPrivateTerms(uid) {
-  const json = await firestoreRestFetch(PRIVATE_ROOT + '/' + uid + '/terms', { query: '?pageSize=500' });
-  return (json?.documents || []).map((entry) => ({
-    id: entry.name.split('/').pop(),
-    ...fromFirestoreFields(entry.fields || {}),
-    _origin: 'private'
-  }));
+  const terms = await restListDocuments(PRIVATE_ROOT + '/' + uid + '/terms', await ensureFirebaseIdToken());
+  return terms.map((term) => ({ ...term, _origin: 'private' }));
 }
 
 async function restSetDocument(path, data) {
@@ -676,33 +687,32 @@ async function startDesktopLogin() {
     attempts += 1;
 
     try {
-      const ref = doc(db, LOGIN_SESSION_COLLECTION, loginSessionId);
-      const snap = await getDoc(ref);
+      const response = await fetch(FIRESTORE_REST_BASE + '/' + LOGIN_SESSION_COLLECTION + '/' + encodeURIComponent(loginSessionId));
+      const json = await response.json().catch(() => ({}));
+      if (!response.ok) throw Object.assign(new Error(json?.error?.message || ('Firestore HTTP ' + response.status)), { code: json?.error?.status });
 
-      if (snap.exists()) {
-        const data = snap.data();
-        const expiresAtMs = data.expiresAt?.toMillis?.() || data.expiresAtMs || 0;
-        if (expiresAtMs && Date.now() > expiresAtMs) {
-          throw new Error('登入授權已逾時，請重新登入');
-        }
-
-        const session = await exchangeGoogleCredentialForFirebase(data);
-
-        try {
-          await restDeleteDocument(LOGIN_SESSION_COLLECTION + '/' + loginSessionId);
-        } catch (cleanupError) {
-          console.warn('Desktop login session cleanup failed:', cleanupError);
-        }
-
-        loginPending = false;
-        loginMessage = '';
-        loginError = '';
-        loginSessionId = '';
-        showToast('已登入 ' + (session.displayName || session.email || 'Google 帳號'));
-        await loadTerms(true);
-        render();
-        return;
+      const data = fromFirestoreFields(json.fields || {});
+      const expiresAtMs = Date.parse(data.expiresAt) || data.expiresAtMs || 0;
+      if (expiresAtMs && Date.now() > expiresAtMs) {
+        throw new Error('登入授權已逾時，請重新登入');
       }
+
+      const session = await exchangeGoogleCredentialForFirebase(data);
+
+      try {
+        await restDeleteDocument(LOGIN_SESSION_COLLECTION + '/' + loginSessionId);
+      } catch (cleanupError) {
+        console.warn('Desktop login session cleanup failed:', cleanupError);
+      }
+
+      loginPending = false;
+      loginMessage = '';
+      loginError = '';
+      loginSessionId = '';
+      showToast('已登入 ' + (session.displayName || session.email || 'Google 帳號'));
+      await loadTerms(true);
+      render();
+      return;
     } catch (error) {
       const text = String(error?.message || error);
       // Rules only allow get on an existing, unexpired session, so a missing
@@ -1405,10 +1415,10 @@ async function loadTerms(force = false) {
   render();
 
   try {
-    const publicSnap = await getDocs(collection(db, COLLECTION_NAME));
-    publicTerms = publicSnap.docs.map((d) => ({
-      id: d.id,
-      ...d.data(),
+    // REST, not the Firebase SDK: in the Tauri WebView the SDK could resolve an
+    // empty snapshot when its connection failed, hiding every public term.
+    publicTerms = (await restListDocuments(COLLECTION_NAME)).map((term) => ({
+      ...term,
       is_shared: true,
       _origin: 'public'
     }));
