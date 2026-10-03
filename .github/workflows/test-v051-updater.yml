@@ -11,7 +11,7 @@ jobs:
     runs-on: windows-latest
     steps:
       - name: Run exact v0.5.1 update discovery logic
-        shell: pwsh
+        shell: powershell
         run: |
           [Console]::OutputEncoding=[System.Text.Encoding]::UTF8
           $ErrorActionPreference='Stop'
