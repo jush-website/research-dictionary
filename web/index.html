@@ -38,6 +38,7 @@
         <output id="fontSizeValue" for="fontSizeSlider">100%</output>
       </label>
       <button id="themeToggle" class="theme-toggle" type="button" aria-label="切換明暗模式" title="切換明暗模式"><span class="theme-toggle-icon" aria-hidden="true"></span><span class="theme-toggle-text">深色</span></button>
+      <a id="desktopDownloadBtn" class="btn btn-ghost desktop-download-btn" href="https://github.com/jush-website/research-dictionary/releases/latest" aria-label="下載最新版 Research Dictionary Windows 桌面版" title="取得最新版 Windows 桌面版"><span aria-hidden="true">↓</span><span class="desktop-download-text">桌面版</span><small id="desktopDownloadVersion"></small></a>
       <button id="loginBtn" class="btn btn-ghost">使用 Google 登入</button>
       <button id="logoutBtn" class="btn btn-ghost hidden">登出</button>
       <button id="importBtn" class="btn btn-ghost hidden">⇧ 批次匯入</button>
@@ -216,6 +217,6 @@
 
   <div id="toast" class="toast"></div>
 
-  <script type="module" src="./app.js"></script>
+  <script type="module" src="./app.js?v=20261003-desktop-download-v1"></script>
 </body>
 </html>
