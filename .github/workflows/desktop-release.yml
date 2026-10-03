@@ -44,6 +44,10 @@ jobs:
         working-directory: desktop
         run: npm install
 
+      - name: Test native updater discovery
+        working-directory: desktop/src-tauri
+        run: cargo test --lib
+
       - name: Build and publish Tauri installers
         uses: tauri-apps/tauri-action@v1
         env:
