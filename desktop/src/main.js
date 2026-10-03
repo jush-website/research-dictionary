@@ -882,6 +882,13 @@ function renderFilters() {
         <option value="shared" ${scopeFilter === 'shared' ? 'selected' : ''}>共享詞彙</option>
         ${currentUser ? `<option value="mine" ${scopeFilter === 'mine' ? 'selected' : ''}>我的詞彙</option><option value="private" ${scopeFilter === 'private' ? 'selected' : ''}>我的私人詞彙</option>` : ''}
       </select>
+      <select id="displayLimitFilter" aria-label="顯示筆數">
+        <option value="36" ${displayLimit === 36 ? 'selected' : ''}>顯示 36 筆</option>
+        <option value="72" ${displayLimit === 72 ? 'selected' : ''}>顯示 72 筆</option>
+        <option value="144" ${displayLimit === 144 ? 'selected' : ''}>顯示 144 筆</option>
+        <option value="300" ${displayLimit === 300 ? 'selected' : ''}>顯示 300 筆</option>
+        <option value="0" ${displayLimit === 0 ? 'selected' : ''}>顯示全部</option>
+      </select>
     </div>`;
 }
 
@@ -916,7 +923,8 @@ function updateFooterTemplate() {
 }
 
 function render() {
-  const results = getResults();
+  const allResults = getAllResults();
+  const results = displayLimit === 0 ? allResults : allResults.slice(0, displayLimit);
   const current = selectedTerm;
   const sourceLabel = sourceState === 'online' ? 'Firestore 已同步' : sourceState === 'cache' ? '離線快取' : sourceState === 'error' ? '無法連線' : '載入中';
   const [hotkeyClass, hotkeyLabel] = hotkeyStatusLabel();
@@ -954,7 +962,7 @@ function render() {
         ${filtersOpen ? renderFilters() : ''}
       </section>
 
-      ${current ? detailTemplate(current) : listTemplate(results)}
+      ${current ? detailTemplate(current) : listTemplate(results, allResults.length)}
 
       <footer class="footer">
         <label class="autostart"><input id="autostartToggle" type="checkbox" /> Windows 開機時啟動</label>
@@ -975,7 +983,7 @@ function render() {
   wireEvents();
 }
 
-function listTemplate(results) {
+function listTemplate(results, totalResults = results.length) {
   if (loading) {
     return `<section class="content"><div class="empty"><div class="spinner"></div><strong>正在讀取研究辭典</strong><span>同步共享詞彙與你的私人詞彙。</span></div></section>`;
   }
@@ -985,7 +993,7 @@ function listTemplate(results) {
 
   return `
     <section class="content">
-      <div class="result-head"><strong>${searchText ? `找到 ${results.length} 個結果` : `顯示 ${results.length} 個詞彙`}</strong><span>${terms.length} 個可用詞彙</span></div>
+      <div class="result-head"><strong>顯示 ${results.length} / ${totalResults} 個詞彙</strong><span>${searchText ? '搜尋結果 · ' : ''}${terms.length} 個可用詞彙</span></div>
       <div class="term-list">
         ${results.map((term, index) => {
           const [statusClass, statusLabel] = statusInfo(term.status);
@@ -1197,6 +1205,11 @@ function wireEvents() {
   });
   document.querySelector('#scopeFilter')?.addEventListener('change', (event) => {
     scopeFilter = event.target.value;
+    selectedTerm = null;
+    render();
+  });
+  document.querySelector('#displayLimitFilter')?.addEventListener('change', (event) => {
+    applyDisplayLimit(event.target.value);
     selectedTerm = null;
     render();
   });
