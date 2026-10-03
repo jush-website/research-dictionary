@@ -351,6 +351,31 @@ Remove-Item -LiteralPath $folder -Force -Recurse -ErrorAction SilentlyContinue
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn version_comparison_works() {
+        assert!(is_newer_version("0.5.4", "0.5.1"));
+        assert!(!is_newer_version("0.5.1", "0.5.1"));
+        assert!(!is_newer_version("0.5.0", "0.5.1"));
+    }
+
+    #[test]
+    fn live_github_release_and_checksum_are_parseable() {
+        let result = check_for_update("0.0.0".to_string())
+            .expect("GitHub release discovery should succeed")
+            .expect("A published release should be newer than 0.0.0");
+
+        assert_eq!(result.len(), 3);
+        assert!(!result[0].is_empty());
+        assert!(result[1].starts_with(RELEASE_DOWNLOAD_PREFIX));
+        assert_eq!(result[2].len(), 64);
+        assert!(result[2].chars().all(|c| c.is_ascii_hexdigit()));
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
