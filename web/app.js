@@ -16,6 +16,8 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 const termsRef = collection(db, 'research_dictionary');
+const MEMBERS_COLLECTION = 'member_research_dictionary';
+const membersRef = collection(db, MEMBERS_COLLECTION);
 const provider = new GoogleAuthProvider();
 const ADMIN_UID = 'KMKNZedIqZZ4kx4l3dDCSqMxYCZ2';
 
@@ -23,7 +25,9 @@ let currentUser = null;
 let terms = [];
 let publicTerms = [];
 let privateTerms = [];
+let memberTerms = [];
 let unsubscribePrivateTerms = null;
+let unsubscribeMemberTerms = null;
 let pendingImportRows = [];
 const desktopSessionId = (() => {
   const value = new URLSearchParams(location.search).get('desktop_login') || '';
@@ -41,10 +45,10 @@ const els = {
   resultCount:$('resultCount'), resultContext:$('resultContext'), noResultsText:$('noResultsText'),
   termsGrid:$('termsGrid'), noResults:$('noResults'), emptySetup:$('emptySetup'), seedBtn:$('seedBtn'),
   termDialog:$('termDialog'), termForm:$('termForm'), closeDialog:$('closeDialog'), cancelDialog:$('cancelDialog'),
-  termId:$('termId'), termEn:$('termEn'), termZh:$('termZh'), category:$('category'), status:$('status'), definition:$('definition'), simpleExplanation:$('simpleExplanation'), example:$('example'), researchNote:$('researchNote'), source:$('source'), sourceType:$('sourceType'), sourceDetail:$('sourceDetail'), isCore:$('isCore'), isShared:$('isShared'), duplicateHint:$('duplicateHint'), saveTermBtn:$('saveTermBtn'),
+  termId:$('termId'), termEn:$('termEn'), termZh:$('termZh'), category:$('category'), status:$('status'), definition:$('definition'), simpleExplanation:$('simpleExplanation'), example:$('example'), researchNote:$('researchNote'), source:$('source'), sourceType:$('sourceType'), sourceDetail:$('sourceDetail'), isCore:$('isCore'), visibility:$('visibility'), duplicateHint:$('duplicateHint'), saveTermBtn:$('saveTermBtn'),
   detailDialog:$('detailDialog'), detailContent:$('detailContent'), toast:$('toast'), categoryList:$('categoryList'),
   themeToggle:$('themeToggle'), fontSizeSlider:$('fontSizeSlider'), fontSizeValue:$('fontSizeValue'),
-  importDialog:$('importDialog'), closeImportDialog:$('closeImportDialog'), cancelImportDialog:$('cancelImportDialog'), batchJson:$('batchJson'), batchFile:$('batchFile'), importShareAll:$('importShareAll'), analyzeImportBtn:$('analyzeImportBtn'), importSummary:$('importSummary'), importPreview:$('importPreview'), executeImportBtn:$('executeImportBtn'),
+  importDialog:$('importDialog'), closeImportDialog:$('closeImportDialog'), cancelImportDialog:$('cancelImportDialog'), batchJson:$('batchJson'), batchFile:$('batchFile'), importVisibility:$('importVisibility'), analyzeImportBtn:$('analyzeImportBtn'), importSummary:$('importSummary'), importPreview:$('importPreview'), executeImportBtn:$('executeImportBtn'),
   desktopAuthBanner:$('desktopAuthBanner'), desktopAuthTitle:$('desktopAuthTitle'), desktopAuthText:$('desktopAuthText'), desktopAuthorizeBtn:$('desktopAuthorizeBtn')
 };
 
@@ -107,11 +111,20 @@ function personalTermsCollection(uid){
   return collection(db,'user_research_dictionary',uid,'terms');
 }
 
+// visibility: private = owner only, members = signed-in users, public = everyone.
+// is_shared is kept (== public) for older desktop versions.
+const VISIBILITY_LABEL={private:'私人',members:'登入可見',public:'共享'};
+function privateVisibility(t){
+  return ['private','members','public'].includes(t?.visibility) ? t.visibility : (t?.is_shared===true ? 'public' : 'private');
+}
+
 function mergeVisibleTerms(){
-  const merged=new Map(publicTerms.map(t=>[t.id,{...t,is_shared:true,_origin:'public'}]));
+  const merged=new Map(publicTerms.map(t=>[t.id,{...t,visibility:'public',is_shared:true,_origin:'public'}]));
+  memberTerms.forEach(t=>merged.set(t.id,{...t,visibility:'members',is_shared:false,_origin:'members'}));
   privateTerms.forEach(t=>{
-    const sharedCopy=merged.get(t.id);
-    merged.set(t.id,{...(sharedCopy||{}),...t,is_shared:t.is_shared===true,_origin:'private'});
+    const copy=merged.get(t.id);
+    const visibility=privateVisibility(t);
+    merged.set(t.id,{...(copy||{}),...t,visibility,is_shared:visibility==='public',_origin:'private'});
   });
   terms=[...merged.values()];
   render();
@@ -119,8 +132,18 @@ function mergeVisibleTerms(){
 
 function subscribePrivateTerms(user){
   if(unsubscribePrivateTerms){ unsubscribePrivateTerms(); unsubscribePrivateTerms=null; }
+  if(unsubscribeMemberTerms){ unsubscribeMemberTerms(); unsubscribeMemberTerms=null; }
   privateTerms=[];
+  memberTerms=[];
   if(!user){ mergeVisibleTerms(); return; }
+  unsubscribeMemberTerms=onSnapshot(membersRef,snap=>{
+    memberTerms=snap.docs.map(d=>({id:d.id,...d.data()}));
+    mergeVisibleTerms();
+  },err=>{
+    console.error('Member dictionary read failed',err);
+    memberTerms=[];
+    mergeVisibleTerms();
+  });
   unsubscribePrivateTerms=onSnapshot(personalTermsCollection(user.uid),snap=>{
     privateTerms=snap.docs.map(d=>({id:d.id,...d.data(),_origin:'private'}));
     mergeVisibleTerms();
@@ -131,26 +154,28 @@ function subscribePrivateTerms(user){
   });
 }
 
-function termIsShared(term){
-  return term?term.is_shared!==false:false;
-}
-
 async function syncPersonalTerm(termId,payload,original=null){
   if(!currentUser) throw new Error('請先登入');
   const uid=currentUser.uid;
   const personalRef=doc(db,'user_research_dictionary',uid,'terms',termId);
   const publicRef=doc(db,'research_dictionary',termId);
+  const membersDocRef=doc(db,MEMBERS_COLLECTION,termId);
   const isOwner=!original || original.createdBy===uid;
 
   if(!isOwner && uid===ADMIN_UID){
-    await updateDoc(publicRef,{...payload,is_shared:true,updatedAt:serverTimestamp()});
+    // Admin edits another user's copy in place and keeps its visibility.
+    const inMembers=original?._origin==='members';
+    await updateDoc(inMembers?membersDocRef:publicRef,{...payload,visibility:inMembers?'members':'public',is_shared:!inMembers,updatedAt:serverTimestamp()});
     return;
   }
   if(!isOwner) throw new Error('你只能修改自己建立的詞條');
 
+  const visibility=['members','public'].includes(payload.visibility)?payload.visibility:'private';
   const createdAt=original?.createdAt || serverTimestamp();
   const base={
     ...payload,
+    visibility,
+    is_shared:visibility==='public',
     createdBy:uid,
     createdByName:currentUser.displayName||'',
     createdByEmail:currentUser.email||'',
@@ -159,14 +184,11 @@ async function syncPersonalTerm(termId,payload,original=null){
   };
   await setDoc(personalRef,base,{merge:true});
 
-  if(payload.is_shared){
-    await setDoc(publicRef,{...base,is_shared:true},{merge:true});
-  }else{
-    const legacyPublic=publicTerms.find(t=>t.id===termId && t.createdBy===uid);
-    if(legacyPublic){
-      await deleteDoc(publicRef);
-    }
-  }
+  if(visibility==='public') await setDoc(publicRef,base,{merge:true});
+  else if(publicTerms.some(t=>t.id===termId && t.createdBy===uid)) await deleteDoc(publicRef);
+
+  if(visibility==='members') await setDoc(membersDocRef,base,{merge:true});
+  else if(memberTerms.some(t=>t.id===termId && t.createdBy===uid)) await deleteDoc(membersDocRef);
 }
 
 async function deletePersonalTerm(term){
@@ -175,13 +197,15 @@ async function deletePersonalTerm(term){
   if(term.createdBy!==uid && uid!==ADMIN_UID) throw new Error('你只能刪除自己建立的詞條');
 
   if(term.createdBy!==uid && uid===ADMIN_UID){
-    await deleteDoc(doc(db,'research_dictionary',term.id));
+    await deleteDoc(doc(db,term._origin==='members'?MEMBERS_COLLECTION:'research_dictionary',term.id));
     return;
   }
 
   await deleteDoc(doc(db,'user_research_dictionary',uid,'terms',term.id)).catch(()=>{});
   const shared=publicTerms.find(t=>t.id===term.id && t.createdBy===uid);
   if(shared) await deleteDoc(doc(db,'research_dictionary',term.id));
+  const memberCopy=memberTerms.find(t=>t.id===term.id && t.createdBy===uid);
+  if(memberCopy) await deleteDoc(doc(db,MEMBERS_COLLECTION,term.id));
 }
 
 function setupDesktopAuthBanner(){
@@ -382,8 +406,15 @@ function normalizeImportTerm(raw={}){
     sourceDetail:String(raw.sourceDetail ?? raw.source_detail ?? '').trim(),
     status,
     is_core:toBool(raw.is_core ?? raw.isCore),
-    is_shared:toBool(raw.is_shared ?? raw.isShared)
+    visibility:importVisibility(raw)
   };
+}
+
+// "visibility" wins; otherwise legacy is_shared:true means public. Default private.
+function importVisibility(raw){
+  const v=String(raw.visibility ?? '').trim().toLowerCase();
+  if(['private','members','public'].includes(v)) return v;
+  return toBool(raw.is_shared ?? raw.isShared) ? 'public' : 'private';
 }
 
 // Boolean('false') is true, so accept only explicit true values from JSON.
@@ -404,6 +435,7 @@ function resetImportDialog(){
   pendingImportRows=[];
   els.batchJson.value='';
   els.batchFile.value='';
+  if(els.importVisibility) els.importVisibility.value='';
   els.importSummary.classList.add('hidden');
   els.importPreview.classList.add('hidden');
   els.importSummary.innerHTML='';
@@ -431,7 +463,7 @@ function renderImportPreview(){
     const note=r.kind==='skip' && r.match ? `已存在：${escapeHtml(r.match.term_en)}｜${escapeHtml(r.match.term_zh)}`
       : r.kind==='review' && r.match ? `疑似與「${escapeHtml(r.match.term_en)}｜${escapeHtml(r.match.term_zh)}」相同`
       : r.kind==='invalid' ? `缺少：${escapeHtml(r.missing.join('、'))}`
-      : `${escapeHtml(t.category)} · ${statusLabel(t.status)}`;
+      : `${escapeHtml(t.category)} · ${statusLabel(t.status)} · ${VISIBILITY_LABEL[els.importVisibility?.value || t.visibility]}`;
     return `<div class="import-row"><div><strong>${escapeHtml(t.term_en||'（未填英文）')}｜${escapeHtml(t.term_zh||'（未填中文）')}</strong><small>${note}</small></div><div><small>${escapeHtml(t.source||'未填來源')}</small></div>${right}</div>`;
   }).join('');
   els.importPreview.classList.remove('hidden');
@@ -476,19 +508,20 @@ async function executeBatchImport(){
   const rows=pendingImportRows.filter(r=>r.kind==='new' || (r.kind==='review' && r.force));
   if(!rows.length){ showToast('沒有可匯入的詞彙',true); return; }
   const uid=currentUser.uid;
-  const shareAll=!!els.importShareAll?.checked;
+  const visibilityOverride=els.importVisibility?.value || '';
   els.executeImportBtn.disabled=true; els.executeImportBtn.textContent='匯入中…';
   try{
-    // Same layout as single add: private copy always, public copy with the same id when shared.
+    // Same layout as single add: private copy always, plus a public or members copy with the same id.
     // 200 terms x up to 2 writes stays under Firestore's 500-op batch limit.
     for(let i=0;i<rows.length;i+=200){
       const batch=writeBatch(db);
       rows.slice(i,i+200).forEach(({term})=>{
         const ref=doc(personalTermsCollection(uid));
-        const isShared=shareAll || term.is_shared;
-        const data={...term,is_shared:isShared,createdBy:uid,createdByName:currentUser.displayName||'',createdByEmail:currentUser.email||'',createdAt:serverTimestamp(),updatedAt:serverTimestamp()};
+        const visibility=visibilityOverride || term.visibility;
+        const data={...term,visibility,is_shared:visibility==='public',createdBy:uid,createdByName:currentUser.displayName||'',createdByEmail:currentUser.email||'',createdAt:serverTimestamp(),updatedAt:serverTimestamp()};
         batch.set(ref,data);
-        if(isShared) batch.set(doc(termsRef,ref.id),data);
+        if(visibility==='public') batch.set(doc(termsRef,ref.id),data);
+        if(visibility==='members') batch.set(doc(membersRef,ref.id),data);
       });
       await batch.commit();
     }
@@ -563,6 +596,7 @@ els.cancelImportDialog.addEventListener('click', ()=>els.importDialog.close());
 els.analyzeImportBtn.addEventListener('click', analyzeBatchJson);
 els.executeImportBtn.addEventListener('click', executeBatchImport);
 els.batchFile.addEventListener('change', async()=>{ const file=els.batchFile.files?.[0]; if(!file) return; els.batchJson.value=await file.text(); analyzeBatchJson(); });
+els.importVisibility?.addEventListener('change', ()=>{ if(pendingImportRows.length) renderImportPreview(); });
 els.closeDialog.addEventListener('click', ()=>els.termDialog.close());
 els.cancelDialog.addEventListener('click', ()=>els.termDialog.close());
 els.termEn.addEventListener('input', updateDuplicateHint);
@@ -576,9 +610,9 @@ function openForm(term=null){
   if(term){
     els.termEn.value=term.term_en||''; els.termZh.value=term.term_zh||''; els.category.value=term.category||'';
     els.status.value=term.status||'general'; els.definition.value=term.definition||''; els.simpleExplanation.value=term.simple_explanation||'';
-    els.example.value=term.example||''; els.researchNote.value=term.research_note||''; els.source.value=term.source||''; els.sourceType.value=term.sourceType||''; els.sourceDetail.value=term.sourceDetail||''; els.isCore.checked=!!term.is_core; els.isShared.checked=term.is_shared!==false;
+    els.example.value=term.example||''; els.researchNote.value=term.research_note||''; els.source.value=term.source||''; els.sourceType.value=term.sourceType||''; els.sourceDetail.value=term.sourceDetail||''; els.isCore.checked=!!term.is_core;
   }
-  if(!term) els.isShared.checked=false;
+  els.visibility.value=term?term.visibility||'private':'private';
   updateDuplicateHint();
   els.termDialog.classList.remove('dialog-enter');
   void els.termDialog.offsetWidth;
@@ -592,7 +626,7 @@ els.termForm.addEventListener('submit', async(e)=>{
   const payload = {
     term_en:els.termEn.value.trim(), term_zh:els.termZh.value.trim(), category:els.category.value.trim()||'未分類', status:els.status.value,
     definition:els.definition.value.trim(), simple_explanation:els.simpleExplanation.value.trim(), example:els.example.value.trim(),
-    research_note:els.researchNote.value.trim(), source:els.source.value.trim(), sourceType:els.sourceType.value.trim(), sourceDetail:els.sourceDetail.value.trim(), is_core:els.isCore.checked, is_shared:els.isShared.checked
+    research_note:els.researchNote.value.trim(), source:els.source.value.trim(), sourceType:els.sourceType.value.trim(), sourceDetail:els.sourceDetail.value.trim(), is_core:els.isCore.checked, visibility:els.visibility.value
   };
   const duplicate = findDuplicate(payload.term_en, payload.term_zh, els.termId.value);
   if(duplicate){
@@ -612,7 +646,7 @@ els.termForm.addEventListener('submit', async(e)=>{
 });
 
 function openDetail(term){
-  const chips = `${term.is_core?'<span class="chip core">★ 核心</span>':''}<span class="chip ${term.status==='pending'?'pending':term.status==='candidate'?'candidate':''}">${statusLabel(term.status)}</span><span class="chip">${escapeHtml(term.category)}</span><span class="chip ${term.is_shared===false?'private':''}">${term.is_shared===false?'私人':'共享'}</span>`;
+  const chips = `${term.is_core?'<span class="chip core">★ 核心</span>':''}<span class="chip ${term.status==='pending'?'pending':term.status==='candidate'?'candidate':''}">${statusLabel(term.status)}</span><span class="chip">${escapeHtml(term.category)}</span><span class="chip ${term.visibility!=='public'?'private':''}">${VISIBILITY_LABEL[term.visibility]||'共享'}</span>`;
   els.detailContent.innerHTML=`
     <button class="icon-btn detail-close" onclick="document.getElementById('detailDialog').close()">×</button>
     <div class="detail-header"><div class="detail-title"><p class="eyebrow">RESEARCH TERM</p><h2>${escapeHtml(term.term_en)}</h2><h3>${escapeHtml(term.term_zh)}</h3><div class="chips">${chips}</div></div></div>
@@ -665,7 +699,7 @@ function render(){
     <article class="term-card term-enter" style="--delay:${Math.min(index,18)*22}ms">
       <div class="term-top"><div><p class="eyebrow">${escapeHtml(t.category||'UNCATEGORIZED')}</p><h3>${escapeHtml(t.term_en)}</h3><p class="term-zh">${escapeHtml(t.term_zh)}</p></div>${t.is_core?'<span class="core-star" title="核心詞彙">★</span>':''}</div>
       <p class="term-explain">${escapeHtml(t.simple_explanation||t.definition||'')}</p>
-      <div class="chips"><span class="chip ${t.status==='pending'?'pending':t.status==='candidate'?'candidate':''}">${statusLabel(t.status)}</span>${t.is_core?'<span class="chip core">核心</span>':''}<span class="chip ${t.is_shared===false?'private':''}">${t.is_shared===false?'私人':'共享'}</span></div>
+      <div class="chips"><span class="chip ${t.status==='pending'?'pending':t.status==='candidate'?'candidate':''}">${statusLabel(t.status)}</span>${t.is_core?'<span class="chip core">核心</span>':''}<span class="chip ${t.visibility!=='public'?'private':''}">${VISIBILITY_LABEL[t.visibility]||'共享'}</span></div>
       <div class="card-actions"><button class="link-btn" data-detail="${t.id}">查看完整內容 →</button><div class="mini-actions">${canEdit(t)?`<button data-edit="${t.id}">編輯</button><button class="delete" data-delete="${t.id}">刪除</button>`:''}</div></div>
     </article>`).join('');
 

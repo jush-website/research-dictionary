@@ -12,7 +12,7 @@
     "sourceType": "Paper",
     "sourceDetail": "",
     "is_core": true,
-    "is_shared": false
+    "visibility": "private"
   },
   {
     "term_en": "Example Working Concept",
@@ -27,6 +27,6 @@
     "sourceType": "",
     "sourceDetail": "",
     "is_core": false,
-    "is_shared": false
+    "visibility": "private"
   }
 ]

@@ -161,9 +161,9 @@
       </div>
       <div class="form-grid two form-check-grid">
         <label class="checkbox-row"><input id="isCore" type="checkbox"> 標記為核心詞彙</label>
-        <label class="checkbox-row"><input id="isShared" type="checkbox"> 共享給其他使用者</label>
+        <label>可見範圍<select id="visibility"><option value="private">私人（只有我）</option><option value="members">登入可見（登入的使用者）</option><option value="public">共享（所有人，含未登入）</option></select></label>
       </div>
-      <p class="share-help">未勾選時，詞彙只會儲存在你的私人辭典；勾選後會同步到公開研究辭典。</p>
+      <p class="share-help">私人只存在你的辭典；登入可見會讓其他登入使用者看到；共享會同步到公開研究辭典。</p>
       <div class="modal-actions">
         <button type="button" class="btn btn-ghost" id="cancelDialog">取消</button>
         <button type="submit" class="btn btn-primary" id="saveTermBtn">儲存</button>
@@ -178,7 +178,7 @@
         <div>
           <p class="eyebrow">BATCH IMPORT</p>
           <h2>匯入研究詞彙</h2>
-          <p class="modal-subtitle">上傳 .json 檔或貼上 JSON 陣列，系統會先檢查重複與疑似相同詞彙，確認後才寫入。匯入的詞彙都屬於你的帳號；沒有寫 <code>"is_shared": true</code> 的詞彙只有你看得到。</p>
+          <p class="modal-subtitle">上傳 .json 檔或貼上 JSON 陣列，系統會先檢查重複與疑似相同詞彙，確認後才寫入。匯入的詞彙都屬於你的帳號；沒有指定 <code>visibility</code> 的詞彙預設私人。</p>
         </div>
         <button type="button" class="icon-btn" id="closeImportDialog">×</button>
       </div>
@@ -191,11 +191,13 @@
         <button type="button" id="analyzeImportBtn" class="btn btn-ghost">檢查資料</button>
         <a class="btn btn-ghost" href="sample-import.json" download="research-dictionary-sample-import.json">下載範例 JSON</a>
       </div>
-      <label class="import-share-all"><input id="importShareAll" type="checkbox"> 全部設為共享（忽略檔案內的 is_shared）</label>
+      <label class="import-share-all">可見範圍
+        <select id="importVisibility"><option value="">依檔案內的 visibility（未填為私人）</option><option value="private">全部私人</option><option value="members">全部登入可見</option><option value="public">全部共享（含未登入）</option></select>
+      </label>
       <details class="import-format">
         <summary>JSON 格式說明</summary>
         <p>檔案內容是一個陣列，每個物件是一個詞彙。必填：<code>term_en</code>、<code>term_zh</code>、<code>definition</code>、<code>simple_explanation</code>。</p>
-        <p>選填：<code>category</code>（任意分類，空白為「未分類」）、<code>status</code>（<code>verified</code>／<code>pending</code>／<code>candidate</code>，預設 pending）、<code>example</code>、<code>research_note</code>、<code>source</code>、<code>sourceType</code>、<code>sourceDetail</code>（沒有頁碼請留空）、<code>is_core</code>（true／false）、<code>is_shared</code>（true／false，預設 false）。</p>
+        <p>選填：<code>category</code>（任意分類，空白為「未分類」）、<code>status</code>（<code>verified</code>／<code>pending</code>／<code>candidate</code>，預設 pending）、<code>example</code>、<code>research_note</code>、<code>source</code>、<code>sourceType</code>、<code>sourceDetail</code>（沒有頁碼請留空）、<code>is_core</code>（true／false）、<code>visibility</code>（<code>private</code>／<code>members</code>／<code>public</code>，預設 private；舊格式 <code>"is_shared": true</code> 視為 public）。</p>
       </details>
 
       <div id="importSummary" class="import-summary hidden"></div>

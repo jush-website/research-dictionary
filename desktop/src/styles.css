@@ -566,3 +566,9 @@ html[data-theme="light"] .login-error{background:rgba(190,63,63,.06);border-colo
 html[data-theme="light"] .import-list,html[data-theme="light"] .import-row{border-color:rgba(0,0,0,.08)}
 html[data-theme="light"] .import-row small{color:#6c7c89}
 html[data-theme="light"] .settings-note code{color:#127a5c}
+
+/* Three-level visibility */
+.visibility.members{background:rgba(128,228,196,.10);color:#8fe6c9}
+html[data-theme="light"] .visibility.members{color:#127a5c;background:rgba(18,122,92,.08)}
+.import-visibility{display:flex!important;align-items:center;gap:8px;flex-wrap:wrap;margin:4px 0 6px}
+.import-visibility select{width:auto!important}

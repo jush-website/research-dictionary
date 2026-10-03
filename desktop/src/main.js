@@ -19,6 +19,7 @@ const firebaseConfig = {
 
 const COLLECTION_NAME = 'research_dictionary';
 const PRIVATE_ROOT = 'user_research_dictionary';
+const MEMBERS_COLLECTION = 'member_research_dictionary';
 const LOGIN_SESSION_COLLECTION = 'desktop_login_sessions';
 const ADMIN_UID = 'KMKNZedIqZZ4kx4l3dDCSqMxYCZ2';
 const CACHE_KEY = 'research_dictionary_desktop_cache_v1';
@@ -41,6 +42,7 @@ const appWindow = getCurrentWindow();
 
 let publicTerms = [];
 let privateTerms = [];
+let memberTerms = [];
 let terms = [];
 let currentUser = null;
 let authSession = null;
@@ -56,7 +58,7 @@ let editorOpen = false;
 let editingTerm = null;
 let importOpen = false;
 let importRows = [];
-let importShareAll = false;
+let importVisibility = '';
 let importBusy = false;
 let loginPending = false;
 let loginSessionId = '';
@@ -158,9 +160,9 @@ function scoreTerm(term, rawQuery) {
 }
 
 function scopeMatches(term) {
-  if (scopeFilter === 'shared') return term.is_shared !== false;
+  if (scopeFilter === 'shared') return term.visibility !== 'private';
   if (scopeFilter === 'mine') return !!currentUser && term.createdBy === currentUser.uid;
-  if (scopeFilter === 'private') return !!currentUser && term.createdBy === currentUser.uid && term.is_shared === false;
+  if (scopeFilter === 'private') return !!currentUser && term.createdBy === currentUser.uid && term.visibility === 'private';
   return true;
 }
 
@@ -187,12 +189,20 @@ function categories() {
     .sort((a, b) => a.localeCompare(b, 'zh-Hant'));
 }
 
+// visibility: private = owner only, members = signed-in users, public = everyone.
+// is_shared is still written (== public) for older desktop versions.
+function privateVisibility(term) {
+  return ['private', 'members', 'public'].includes(term?.visibility) ? term.visibility : (term?.is_shared === true ? 'public' : 'private');
+}
+
 function mergeTerms() {
   const merged = new Map();
-  publicTerms.forEach((term) => merged.set(term.id, { ...term, is_shared: true, _origin: 'public' }));
+  publicTerms.forEach((term) => merged.set(term.id, { ...term, visibility: 'public', is_shared: true, _origin: 'public' }));
+  memberTerms.forEach((term) => merged.set(term.id, { ...term, visibility: 'members', is_shared: false, _origin: 'members' }));
   privateTerms.forEach((term) => {
-    const shared = merged.get(term.id);
-    merged.set(term.id, { ...(shared || {}), ...term, is_shared: term.is_shared === true, _origin: 'private' });
+    const copy = merged.get(term.id);
+    const visibility = privateVisibility(term);
+    merged.set(term.id, { ...(copy || {}), ...term, visibility, is_shared: visibility === 'public', _origin: 'private' });
   });
   terms = [...merged.values()];
   localStorage.setItem(CACHE_KEY, JSON.stringify(terms));
@@ -200,11 +210,14 @@ function mergeTerms() {
 
 function canEdit(term) {
   if (!currentUser || !term) return false;
-  return term.createdBy === currentUser.uid || (currentUser.uid === ADMIN_UID && term._origin === 'public');
+  return term.createdBy === currentUser.uid || (currentUser.uid === ADMIN_UID && ['public', 'members'].includes(term._origin));
 }
 
+const VISIBILITY_OPTIONS = [['private', '私人（只有我）'], ['members', '登入可見（登入的使用者）'], ['public', '共享（所有人，含未登入）']];
+
 function visibilityInfo(term) {
-  return term?.is_shared === false ? ['private', '私人'] : ['shared', '共享'];
+  const visibility = term?.visibility || (term?.is_shared === false ? 'private' : 'public');
+  return visibility === 'private' ? ['private', '私人'] : visibility === 'members' ? ['members', '登入可見'] : ['shared', '共享'];
 }
 
 function ownerLabel(term) {
@@ -471,8 +484,15 @@ function normalizeImportTerm(raw = {}) {
     sourceDetail: text(raw.sourceDetail, raw.source_detail),
     status,
     is_core: toBool(raw.is_core ?? raw.isCore),
-    is_shared: toBool(raw.is_shared ?? raw.isShared)
+    visibility: importTermVisibility(raw)
   };
+}
+
+// "visibility" wins; otherwise legacy is_shared:true means public. Default private.
+function importTermVisibility(raw) {
+  const value = String(raw.visibility ?? '').trim().toLowerCase();
+  if (['private', 'members', 'public'].includes(value)) return value;
+  return toBool(raw.is_shared ?? raw.isShared) ? 'public' : 'private';
 }
 
 // Boolean('false') is true, so accept only explicit true values from JSON.
@@ -522,9 +542,11 @@ async function runImport() {
       const writes = [];
       chunk.forEach(({ term }) => {
         const id = crypto.randomUUID().replace(/-/g, '');
+        const visibility = importVisibility || term.visibility;
         const data = {
           ...term,
-          is_shared: importShareAll || term.is_shared,
+          visibility,
+          is_shared: visibility === 'public',
           createdBy: uid,
           createdByName: currentUser.displayName || '',
           createdByEmail: currentUser.email || '',
@@ -533,7 +555,8 @@ async function runImport() {
         };
         const fields = firestoreFields(data);
         writes.push({ update: { name: FIRESTORE_DOC_PREFIX + PRIVATE_ROOT + '/' + uid + '/terms/' + id, fields } });
-        if (data.is_shared) writes.push({ update: { name: FIRESTORE_DOC_PREFIX + COLLECTION_NAME + '/' + id, fields } });
+        if (visibility === 'public') writes.push({ update: { name: FIRESTORE_DOC_PREFIX + COLLECTION_NAME + '/' + id, fields } });
+        if (visibility === 'members') writes.push({ update: { name: FIRESTORE_DOC_PREFIX + MEMBERS_COLLECTION + '/' + id, fields } });
       });
       await restCommit(writes);
       done += chunk.length;
@@ -572,17 +595,22 @@ function importTemplate() {
           <div><span class="settings-eyebrow">IMPORT JSON</span><h2 id="importTitle">匯入研究詞彙</h2></div>
           <button class="icon-button" id="importCloseBtn" aria-label="關閉">×</button>
         </div>
-        <p class="settings-note">選擇 .json 檔，內容為詞彙陣列。必填 <code>term_en</code>、<code>term_zh</code>、<code>definition</code>、<code>simple_explanation</code>；選填 <code>category</code>、<code>status</code>（verified／pending／candidate）、<code>example</code>、<code>research_note</code>、<code>source</code>、<code>sourceType</code>、<code>sourceDetail</code>（沒有頁碼請留空）、<code>is_core</code>、<code>is_shared</code>（預設 false＝私人）。</p>
+        <p class="settings-note">選擇 .json 檔，內容為詞彙陣列。必填 <code>term_en</code>、<code>term_zh</code>、<code>definition</code>、<code>simple_explanation</code>；選填 <code>category</code>、<code>status</code>（verified／pending／candidate）、<code>example</code>、<code>research_note</code>、<code>source</code>、<code>sourceType</code>、<code>sourceDetail</code>（沒有頁碼請留空）、<code>is_core</code>、<code>visibility</code>（private／members／public，預設 private）。</p>
         <div class="import-pick">
           <input id="importFile" type="file" accept="application/json,.json" ${importBusy ? 'disabled' : ''}>
           <button class="small-btn" id="importTemplateBtn">下載範例 JSON</button>
         </div>
-        <label class="check-row"><input id="importShareAll" type="checkbox" ${importShareAll ? 'checked' : ''} ${importBusy ? 'disabled' : ''}><span>全部設為共享（忽略檔案內的 is_shared）</span></label>
+        <label class="import-visibility">可見範圍
+          <select id="importVisibility" ${importBusy ? 'disabled' : ''}>
+            <option value="" ${importVisibility === '' ? 'selected' : ''}>依檔案內的 visibility（未填為私人）</option>
+            ${VISIBILITY_OPTIONS.map(([value, label]) => `<option value="${value}" ${importVisibility === value ? 'selected' : ''}>全部${label}</option>`).join('')}
+          </select>
+        </label>
         ${importRows.length ? `
           <div class="import-summary">共 ${importRows.length} 筆：可新增 ${counts.new}、略過 ${counts.skip}、格式錯誤 ${counts.invalid}</div>
           <div class="import-list">${importRows.map((row) => `
             <div class="import-row ${row.kind}">
-              <div><strong>${escapeHtml(row.term.term_en || '（未填英文）')}｜${escapeHtml(row.term.term_zh || '（未填中文）')}</strong><small>${escapeHtml(row.note)}${row.kind === 'new' ? ' · ' + ((importShareAll || row.term.is_shared) ? '共享' : '私人') : ''}</small></div>
+              <div><strong>${escapeHtml(row.term.term_en || '（未填英文）')}｜${escapeHtml(row.term.term_zh || '（未填中文）')}</strong><small>${escapeHtml(row.note)}${row.kind === 'new' ? ' · ' + visibilityInfo({ visibility: importVisibility || row.term.visibility })[1] : ''}</small></div>
               <span>${label[row.kind]}</span>
             </div>`).join('')}
           </div>` : ''}
@@ -760,6 +788,7 @@ async function logoutDesktop() {
   cancelDesktopLogin();
   persistAuthSession(null);
   privateTerms = [];
+  memberTerms = [];
   selectedTerm = null;
   scopeFilter = 'all';
   mergeTerms();
@@ -1006,7 +1035,7 @@ function detailBlock(title, content, emphasized = false) {
 
 function editorTemplate() {
   const term = editingTerm || {};
-  const isShared = editingTerm ? term.is_shared !== false : false;
+  const visibility = editingTerm ? term.visibility || 'private' : 'private';
   const cats = categories();
 
   return `
@@ -1049,7 +1078,9 @@ function editorTemplate() {
           <label>來源位置<input name="sourceDetail" value="${escapeHtml(term.sourceDetail || '')}" placeholder="章節、頁碼；不確定可留空"></label>
           <div class="editor-checks">
             <label class="check-row"><input name="is_core" type="checkbox" ${term.is_core ? 'checked' : ''}><span>核心詞彙</span></label>
-            <label class="check-row share-check"><input name="is_shared" type="checkbox" ${isShared ? 'checked' : ''}><span><strong>共享給其他使用者</strong><small>未勾選時只有你的帳號看得到。</small></span></label>
+            <label>可見範圍
+              <select name="visibility">${VISIBILITY_OPTIONS.map(([value, label]) => `<option value="${value}" ${visibility === value ? 'selected' : ''}>${label}</option>`).join('')}</select>
+            </label>
           </div>
           <div class="modal-actions">
             <button type="button" class="secondary-btn" id="editorCancelBtn">取消</button>
@@ -1252,8 +1283,8 @@ function wireEvents() {
     const file = event.target.files?.[0];
     if (file) readImportFile(file);
   });
-  document.querySelector('#importShareAll')?.addEventListener('change', (event) => {
-    importShareAll = event.target.checked;
+  document.querySelector('#importVisibility')?.addEventListener('change', (event) => {
+    importVisibility = event.target.value;
     render();
   });
   document.querySelector('#importTemplateBtn')?.addEventListener('click', downloadImportTemplate);
@@ -1318,7 +1349,7 @@ async function saveEditor(event) {
     sourceType: String(data.get('sourceType') || '').trim(),
     sourceDetail: String(data.get('sourceDetail') || '').trim(),
     is_core: data.get('is_core') === 'on',
-    is_shared: data.get('is_shared') === 'on'
+    visibility: ['members', 'public'].includes(data.get('visibility')) ? data.get('visibility') : 'private'
   };
 
   if (!payload.term_en || !payload.term_zh || !payload.definition || !payload.simple_explanation) {
@@ -1337,17 +1368,20 @@ async function saveEditor(event) {
 
   try {
     const uid = currentUser.uid;
-    const isAdminEditingOther = original && original.createdBy !== uid && uid === ADMIN_UID && original._origin === 'public';
+    const isAdminEditingOther = original && original.createdBy !== uid && uid === ADMIN_UID && ['public', 'members'].includes(original._origin);
     const now = new Date().toISOString();
 
     if (isAdminEditingOther) {
+      // Admin edits another user's copy in place and keeps its visibility.
+      const inMembers = original._origin === 'members';
       const fullPayload = {
         ...original,
         ...payload,
-        is_shared: true,
+        visibility: inMembers ? 'members' : 'public',
+        is_shared: !inMembers,
         updatedAt: now
       };
-      await restSetDocument(COLLECTION_NAME + '/' + original.id, fullPayload);
+      await restSetDocument((inMembers ? MEMBERS_COLLECTION : COLLECTION_NAME) + '/' + original.id, fullPayload);
     } else {
       if (original && original.createdBy && original.createdBy !== uid) {
         throw new Error('你只能修改自己建立的詞彙');
@@ -1356,6 +1390,7 @@ async function saveEditor(event) {
       const termId = original?.id || crypto.randomUUID().replace(/-/g, '');
       const fullPayload = {
         ...payload,
+        is_shared: payload.visibility === 'public',
         createdBy: uid,
         createdByName: currentUser.displayName || '',
         createdByEmail: currentUser.email || '',
@@ -1363,13 +1398,11 @@ async function saveEditor(event) {
         updatedAt: now
       };
 
+      // Private copy always; the public or members copy (same id) follows the chosen visibility.
       await restSetDocument(PRIVATE_ROOT + '/' + uid + '/terms/' + termId, fullPayload);
-
-      if (payload.is_shared) {
-        await restSetDocument(COLLECTION_NAME + '/' + termId, { ...fullPayload, is_shared: true });
-      } else {
-        const publicCopy = publicTerms.find((term) => term.id === termId && term.createdBy === uid);
-        if (publicCopy) await restDeleteDocument(COLLECTION_NAME + '/' + termId);
+      for (const [level, path, copies] of [['public', COLLECTION_NAME, publicTerms], ['members', MEMBERS_COLLECTION, memberTerms]]) {
+        if (payload.visibility === level) await restSetDocument(path + '/' + termId, fullPayload);
+        else if (copies.some((term) => term.id === termId && term.createdBy === uid)) await restDeleteDocument(path + '/' + termId);
       }
     }
 
@@ -1392,12 +1425,12 @@ async function deleteTerm(term) {
 
   try {
     const uid = currentUser.uid;
-    if (term.createdBy !== uid && uid === ADMIN_UID && term._origin === 'public') {
-      await restDeleteDocument(COLLECTION_NAME + '/' + term.id);
+    if (term.createdBy !== uid && uid === ADMIN_UID && ['public', 'members'].includes(term._origin)) {
+      await restDeleteDocument((term._origin === 'members' ? MEMBERS_COLLECTION : COLLECTION_NAME) + '/' + term.id);
     } else {
       try { await restDeleteDocument(PRIVATE_ROOT + '/' + uid + '/terms/' + term.id); } catch {}
-      const publicCopy = publicTerms.find((item) => item.id === term.id && item.createdBy === uid);
-      if (publicCopy) await restDeleteDocument(COLLECTION_NAME + '/' + term.id);
+      if (publicTerms.some((item) => item.id === term.id && item.createdBy === uid)) await restDeleteDocument(COLLECTION_NAME + '/' + term.id);
+      if (memberTerms.some((item) => item.id === term.id && item.createdBy === uid)) await restDeleteDocument(MEMBERS_COLLECTION + '/' + term.id);
     }
 
     selectedTerm = null;
@@ -1431,8 +1464,16 @@ async function loadTerms(force = false) {
         privateTerms = [];
         showToast('私人辭典同步失敗：' + (privateError?.message || privateError), true);
       }
+      try {
+        memberTerms = await restListDocuments(MEMBERS_COLLECTION, await ensureFirebaseIdToken());
+      } catch (memberError) {
+        console.warn('Members dictionary unavailable:', memberError);
+        memberTerms = [];
+        showToast('登入可見辭典同步失敗：' + (memberError?.message || memberError), true);
+      }
     } else {
       privateTerms = [];
+      memberTerms = [];
     }
 
     mergeTerms();

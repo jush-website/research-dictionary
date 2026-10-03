@@ -26,6 +26,21 @@ service cloud.firestore {
         && (resource.data.createdBy == request.auth.uid || isAdmin());
     }
 
+    // 登入可見辭典：所有登入使用者可讀，未登入者看不到；寫入權限同公開辭典。
+    match /member_research_dictionary/{termId} {
+      allow read: if signedIn();
+
+      allow create: if signedIn()
+        && request.resource.data.createdBy == request.auth.uid;
+
+      allow update: if signedIn()
+        && (resource.data.createdBy == request.auth.uid || isAdmin())
+        && request.resource.data.createdBy == resource.data.createdBy;
+
+      allow delete: if signedIn()
+        && (resource.data.createdBy == request.auth.uid || isAdmin());
+    }
+
     // 每位使用者自己的私人辭典。
     match /user_research_dictionary/{uid}/terms/{termId} {
       allow read: if signedIn()
