@@ -49,7 +49,7 @@ const els = {
   termDialog:$('termDialog'), termForm:$('termForm'), closeDialog:$('closeDialog'), cancelDialog:$('cancelDialog'),
   termId:$('termId'), termEn:$('termEn'), termZh:$('termZh'), category:$('category'), status:$('status'), definition:$('definition'), simpleExplanation:$('simpleExplanation'), example:$('example'), researchNote:$('researchNote'), source:$('source'), sourceType:$('sourceType'), sourceDetail:$('sourceDetail'), isCore:$('isCore'), visibility:$('visibility'), duplicateHint:$('duplicateHint'), saveTermBtn:$('saveTermBtn'),
   detailDialog:$('detailDialog'), detailContent:$('detailContent'), toast:$('toast'), categoryList:$('categoryList'),
-  themeToggle:$('themeToggle'), fontSizeSlider:$('fontSizeSlider'), fontSizeValue:$('fontSizeValue'), desktopDownloadBtn:$('desktopDownloadBtn'), desktopDownloadVersion:$('desktopDownloadVersion'),
+  themeToggle:$('themeToggle'), mobileMenuBtn:$('mobileMenuBtn'), mobileActionPanel:$('mobileActionPanel'), fontSizeSlider:$('fontSizeSlider'), fontSizeValue:$('fontSizeValue'), desktopDownloadBtn:$('desktopDownloadBtn'), desktopDownloadVersion:$('desktopDownloadVersion'),
   importDialog:$('importDialog'), closeImportDialog:$('closeImportDialog'), cancelImportDialog:$('cancelImportDialog'), batchJson:$('batchJson'), batchFile:$('batchFile'), importVisibility:$('importVisibility'), analyzeImportBtn:$('analyzeImportBtn'), importSummary:$('importSummary'), importPreview:$('importPreview'), executeImportBtn:$('executeImportBtn'),
   desktopAuthBanner:$('desktopAuthBanner'), desktopAuthTitle:$('desktopAuthTitle'), desktopAuthText:$('desktopAuthText'), desktopAuthorizeBtn:$('desktopAuthorizeBtn')
 };
@@ -77,6 +77,22 @@ function setTheme(theme,{persist=true}={}){
 }
 
 function toggleTheme(){ setTheme(currentTheme==='dark'?'light':'dark'); }
+
+
+function setMobileMenu(open){
+  if(!els.mobileMenuBtn || !els.mobileActionPanel) return;
+  const next=Boolean(open);
+  els.mobileActionPanel.classList.toggle('mobile-open',next);
+  els.mobileMenuBtn.setAttribute('aria-expanded',String(next));
+  els.mobileMenuBtn.classList.toggle('active',next);
+}
+
+function toggleMobileMenu(){
+  const open=els.mobileMenuBtn?.getAttribute('aria-expanded')==='true';
+  setMobileMenu(!open);
+}
+
+function closeMobileMenu(){ setMobileMenu(false); }
 
 
 async function refreshDesktopDownload(){
@@ -768,6 +784,22 @@ updateThemeButton();
 initFontScale();
 setupDesktopAuthBanner();
 els.themeToggle?.addEventListener('click',toggleTheme);
+els.mobileMenuBtn?.addEventListener('click',(event)=>{
+  event.stopPropagation();
+  toggleMobileMenu();
+});
+els.mobileActionPanel?.addEventListener('click',(event)=>event.stopPropagation());
+[els.desktopDownloadBtn,els.loginBtn,els.logoutBtn,els.importBtn,els.addBtn].forEach(el=>{
+  el?.addEventListener('click',()=>closeMobileMenu());
+});
+document.addEventListener('click',(event)=>{
+  if(!els.mobileActionPanel?.classList.contains('mobile-open')) return;
+  if(els.mobileActionPanel.contains(event.target) || els.mobileMenuBtn?.contains(event.target)) return;
+  closeMobileMenu();
+});
+window.addEventListener('resize',()=>{
+  if(window.innerWidth>620) closeMobileMenu();
+});
 refreshDesktopDownload();
 els.fontSizeSlider?.addEventListener('input',event=>applyFontScale(event.target.value));
 
@@ -797,6 +829,7 @@ els.filterToggle.addEventListener('click',()=>{
 });
 
 document.addEventListener('keydown',event=>{
+  if(event.key==='Escape') closeMobileMenu();
   if((event.ctrlKey || event.metaKey) && event.key.toLowerCase()==='k'){
     event.preventDefault();
     els.searchInput.focus();
