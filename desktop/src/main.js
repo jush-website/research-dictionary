@@ -337,6 +337,8 @@ function firestoreValue(value) {
     return Number.isInteger(value) ? { integerValue: String(value) } : { doubleValue: value };
   }
   if (value instanceof Date) return { timestampValue: value.toISOString() };
+  if (value && typeof value.toDate === 'function') return { timestampValue: value.toDate().toISOString() };
+  if (value && typeof value.seconds === 'number') return { timestampValue: new Date(value.seconds * 1000).toISOString() };
   if (typeof value === 'string') {
     const isIsoTime = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(value);
     return isIsoTime ? { timestampValue: value } : { stringValue: value };
@@ -593,6 +595,7 @@ async function logoutDesktop() {
   selectedTerm = null;
   scopeFilter = 'all';
   mergeTerms();
+  render();
   showToast('已登出');
 }
 
