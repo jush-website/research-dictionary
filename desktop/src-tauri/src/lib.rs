@@ -146,9 +146,25 @@ struct ReleaseInfo {
 }
 
 fn update_client() -> Result<reqwest::blocking::Client, String> {
-    reqwest::blocking::Client::builder()
+    let mut builder = reqwest::blocking::Client::builder()
         .user_agent("ResearchDictionaryDesktop")
-        .timeout(Duration::from_secs(45))
+        .timeout(Duration::from_secs(45));
+
+    // GitHub-hosted CI runners share public API rate limits. During CI only,
+    // GITHUB_TOKEN is supplied so the same release-discovery code can be tested
+    // without failing because another runner exhausted the anonymous quota.
+    if let Ok(token) = std::env::var("GITHUB_TOKEN") {
+        let token = token.trim();
+        if !token.is_empty() {
+            let mut headers = reqwest::header::HeaderMap::new();
+            let value = reqwest::header::HeaderValue::from_str(&format!("Bearer {token}"))
+                .map_err(|e| format!("無法建立 GitHub 授權標頭：{e}"))?;
+            headers.insert(reqwest::header::AUTHORIZATION, value);
+            builder = builder.default_headers(headers);
+        }
+    }
+
+    builder
         .build()
         .map_err(|e| format!("無法建立更新連線：{e}"))
 }
