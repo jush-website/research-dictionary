@@ -1,0 +1,78 @@
+name: Smoke Test Latest Desktop Release
+
+# Tests the published release exactly as the app's updater sees it:
+# GitHub releases/latest -> setup.exe + SHA256SUMS -> hash match ->
+# shipped ResearchDictionary.exe --apply-update (native helper, no PowerShell) -> installed version.
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows: ['Build Windows Desktop Release']
+    types: [completed]
+
+jobs:
+  smoke-test:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - name: Smoke test updater download and native silent install
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $headers = @{ 'User-Agent' = 'ResearchDictionaryUpdaterSmokeTest' }
+
+          $release = Invoke-RestMethod -Uri 'https://api.github.com/repos/jush-website/research-dictionary/releases/latest' -Headers $headers
+          $version = $release.tag_name -replace '^desktop-v', ''
+
+          $setup = $release.assets | Where-Object { $_.name -match '(?i)_x64-setup\.exe$' } | Select-Object -First 1
+          $checksumAsset = $release.assets | Where-Object { $_.name -eq 'SHA256SUMS.txt' } | Select-Object -First 1
+          $portable = $release.assets | Where-Object { $_.name -eq 'ResearchDictionary.exe' } | Select-Object -First 1
+          if (-not $setup) { throw 'Updater smoke test could not find the NSIS setup EXE.' }
+          if (-not $checksumAsset) { throw 'Updater smoke test could not find SHA256SUMS.txt.' }
+          if (-not $portable) { throw 'Updater smoke test could not find the portable ResearchDictionary.exe.' }
+
+          New-Item -ItemType Directory -Force -Path 'update-smoke' | Out-Null
+          $setupPath = Join-Path $PWD 'update-smoke\ResearchDictionary-Setup.exe'
+          $sumPath = Join-Path $PWD 'update-smoke\SHA256SUMS.txt'
+          $helper = Join-Path $PWD 'update-smoke\ResearchDictionaryUpdater.exe'
+
+          Invoke-WebRequest -Uri $setup.browser_download_url -Headers $headers -OutFile $setupPath
+          Invoke-WebRequest -Uri $checksumAsset.browser_download_url -Headers $headers -OutFile $sumPath
+          Invoke-WebRequest -Uri $portable.browser_download_url -Headers $headers -OutFile $helper
+
+          $line = Get-Content $sumPath | Where-Object { $_ -match [regex]::Escape($setup.name) } | Select-Object -First 1
+          if (-not $line) { throw "Installer checksum entry for $($setup.name) was not found." }
+          $expected = ($line.Trim() -split '\s+')[0].ToLowerInvariant()
+          $actual = (Get-FileHash -Algorithm SHA256 $setupPath).Hash.ToLowerInvariant()
+          if ($expected -ne $actual) { throw "Updater checksum mismatch. Expected $expected but got $actual." }
+
+          # Install through the shipped app's own native helper mode (the path users hit).
+          # Wait for the helper process only: -Wait would also wait for the relaunched app and hang.
+          $notRunning = Join-Path $PWD 'update-smoke\ResearchDictionary.exe'
+          $proc = Start-Process -FilePath $helper -ArgumentList @('--apply-update', "`"$setupPath`"", "`"$notRunning`"") -PassThru
+          $null = $proc.Handle
+          if (-not $proc.WaitForExit(180000)) { throw 'Native update helper did not finish within 3 minutes.' }
+          if ($proc.ExitCode -ne 0) { throw "Native update helper returned exit code $($proc.ExitCode)." }
+
+          $candidates = @(
+            "$env:LOCALAPPDATA\Research Dictionary\ResearchDictionary.exe",
+            "$env:LOCALAPPDATA\Programs\Research Dictionary\ResearchDictionary.exe"
+          )
+          $installed = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $installed) { throw 'Native install finished but ResearchDictionary.exe was not found.' }
+
+          $info = (Get-Item $installed).VersionInfo
+          if (-not ("$($info.ProductVersion)" -like "$version*" -or "$($info.FileVersion)" -like "$version*")) {
+            throw "Installed version is $($info.ProductVersion) / $($info.FileVersion), expected $version."
+          }
+
+          Start-Sleep -Seconds 5
+          $running = Get-Process -Name 'ResearchDictionary' -ErrorAction SilentlyContinue
+          if ($running) { Write-Host '[OK] Helper relaunched the installed app.'; $running | Stop-Process -Force }
+          else { Write-Warning 'Installed app was not observed running after helper relaunch (runner may lack a desktop session).' }
+
+          Write-Host "[OK] Updater smoke test passed."
+          Write-Host "     Latest release: $($release.tag_name)"
+          Write-Host "     Asset:          $($setup.name)"
+          Write-Host "     SHA256:         $actual"
+          Write-Host "     Installed:      $installed ($($info.ProductVersion))"
