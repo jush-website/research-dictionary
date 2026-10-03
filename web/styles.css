@@ -493,3 +493,131 @@ html[data-theme="light"] .chip.private{color:#65449a;background:rgba(121,80,184,
   .font-size-control{width:100%;flex:1 1 100%}
   .dictionary-content .terms-grid{grid-template-columns:1fr}
 }
+
+
+/* v11: touch-tablet query layout fallback */
+/* Some tablets report 1200–1400 CSS px (or request desktop mode), so width-only
+   breakpoints still render the desktop sidebar. Touch/coarse-pointer devices use
+   the tablet query layout regardless of that reported width. */
+@media (hover:none) and (pointer:coarse){
+  .topbar{
+    height:auto;
+    min-height:78px;
+    padding:10px 16px;
+    gap:12px;
+    align-items:flex-start;
+  }
+  .brand{flex:0 1 auto;min-width:0}
+  .top-actions{
+    min-width:0;
+    flex:1 1 auto;
+    display:flex;
+    justify-content:flex-end;
+    align-items:center;
+    flex-wrap:wrap;
+    gap:8px;
+  }
+
+  main{width:min(100% - 28px,1180px)}
+  .dictionary-layout{
+    grid-template-columns:minmax(0,1fr)!important;
+    gap:14px;
+  }
+  .search-sidebar{
+    position:static!important;
+    top:auto!important;
+    width:100%;
+    max-width:100%;
+    min-width:0;
+    padding:14px;
+    display:flex;
+    flex-direction:column;
+  }
+  .search-sidebar .search-wrap{
+    order:1;
+    width:100%;
+    max-width:100%;
+    min-width:0;
+    overflow:hidden;
+  }
+  .search-sidebar .search-wrap input{
+    flex:1 1 0;
+    width:auto;
+    min-width:0;
+  }
+  .search-shortcut{display:none!important}
+  .search-sidebar .search-tip{order:2}
+  .search-sidebar .sidebar-title-row{
+    order:3;
+    align-items:center;
+    margin:8px 0 0;
+  }
+  .search-sidebar .sidebar-title-row>div{display:none}
+  .mobile-filter-toggle{
+    display:inline-flex!important;
+    align-items:center;
+    width:100%;
+    justify-content:center;
+    margin:0;
+    padding:9px 11px;
+  }
+  .search-sidebar .filter-panel{
+    order:4;
+    display:none;
+    width:100%;
+    max-width:100%;
+    min-width:0;
+    margin-top:10px;
+    padding-top:12px;
+  }
+  .search-sidebar .filter-panel.mobile-open{display:grid}
+  .filter-field,
+  .filter-field select,
+  .filter-toggles,
+  .sidebar-clear-btn{
+    width:100%;
+    max-width:100%;
+    min-width:0;
+  }
+  .filter-toggles{
+    grid-template-columns:repeat(2,minmax(0,1fr));
+    gap:10px;
+  }
+  .filter-toggles .toggle{
+    min-width:0;
+    white-space:normal;
+    overflow-wrap:anywhere;
+  }
+  .filter-toggles .toggle input{
+    flex:0 0 auto;
+    width:auto;
+    min-width:auto;
+  }
+
+  .dictionary-content{
+    min-width:0;
+    max-width:100%;
+  }
+  .dictionary-content .terms-grid{
+    grid-template-columns:repeat(2,minmax(0,1fr));
+  }
+  .results-bar{padding-top:2px}
+
+  .font-size-control{
+    width:auto;
+    max-width:100%;
+    flex:1 1 190px;
+    justify-content:flex-end;
+  }
+  .font-size-control input[type="range"]{
+    width:min(160px,32vw);
+    min-width:80px;
+  }
+}
+
+/* Narrow touch devices use one card column. */
+@media (hover:none) and (pointer:coarse) and (max-width:700px){
+  .dictionary-content .terms-grid{grid-template-columns:1fr}
+  .top-actions{width:100%;flex:1 1 100%;justify-content:flex-start}
+  .font-size-control{width:100%;flex:1 1 100%}
+}
