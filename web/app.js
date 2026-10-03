@@ -50,7 +50,7 @@ const els = {
   termId:$('termId'), termEn:$('termEn'), termZh:$('termZh'), category:$('category'), status:$('status'), definition:$('definition'), simpleExplanation:$('simpleExplanation'), example:$('example'), researchNote:$('researchNote'), source:$('source'), sourceType:$('sourceType'), sourceDetail:$('sourceDetail'), isCore:$('isCore'), visibility:$('visibility'), duplicateHint:$('duplicateHint'), saveTermBtn:$('saveTermBtn'),
   detailDialog:$('detailDialog'), detailContent:$('detailContent'), toast:$('toast'), categoryList:$('categoryList'),
   themeToggle:$('themeToggle'), mobileMenuBtn:$('mobileMenuBtn'), mobileActionPanel:$('mobileActionPanel'), fontSizeSlider:$('fontSizeSlider'), fontSizeValue:$('fontSizeValue'), desktopDownloadBtn:$('desktopDownloadBtn'), desktopDownloadVersion:$('desktopDownloadVersion'),
-  importDialog:$('importDialog'), closeImportDialog:$('closeImportDialog'), cancelImportDialog:$('cancelImportDialog'), batchJson:$('batchJson'), batchFile:$('batchFile'), importVisibility:$('importVisibility'), analyzeImportBtn:$('analyzeImportBtn'), importSummary:$('importSummary'), importPreview:$('importPreview'), executeImportBtn:$('executeImportBtn'),
+  importDialog:$('importDialog'), closeImportDialog:$('closeImportDialog'), cancelImportDialog:$('cancelImportDialog'), batchJson:$('batchJson'), batchFile:$('batchFile'), importVisibility:$('importVisibility'), analyzeImportBtn:$('analyzeImportBtn'), importSummary:$('importSummary'), importPreview:$('importPreview'), executeImportBtn:$('executeImportBtn'), publishAllBtn:$('publishAllBtn'),
   desktopAuthBanner:$('desktopAuthBanner'), desktopAuthTitle:$('desktopAuthTitle'), desktopAuthText:$('desktopAuthText'), desktopAuthorizeBtn:$('desktopAuthorizeBtn')
 };
 
@@ -259,6 +259,102 @@ async function deletePersonalTerm(term){
   if(shared) await deleteDoc(doc(db,'research_dictionary',term.id));
   const memberCopy=memberTerms.find(t=>t.id===term.id && t.createdBy===uid);
   if(memberCopy) await deleteDoc(doc(db,MEMBERS_COLLECTION,term.id));
+}
+
+async function publishAllMyTerms(){
+  if(!currentUser){
+    showToast('請先登入',true);
+    return;
+  }
+
+  const uid=currentUser.uid;
+  const snapshot=await getDocs(personalTermsCollection(uid));
+  const docs=snapshot.docs;
+
+  if(!docs.length){
+    showToast('目前沒有可公開的個人詞彙');
+    return;
+  }
+
+  const alreadyPublic=new Set(publicTerms.filter(t=>t.createdBy===uid).map(t=>t.id));
+  const needsPublish=docs.filter(d=>{
+    const data=d.data();
+    return data.visibility!=='public' || data.is_shared!==true || !alreadyPublic.has(d.id);
+  });
+
+  if(!needsPublish.length){
+    showToast('你的詞彙目前已全部公開');
+    return;
+  }
+
+  const ok=confirm(
+    '確定要將你帳號下的 ' + needsPublish.length + ' 筆詞彙全部設為公開嗎？\n\n' +
+    '公開後，未登入的使用者也能看到這些詞彙。'
+  );
+  if(!ok) return;
+
+  const originalText=els.publishAllBtn?.textContent || '◎ 全部公開';
+  if(els.publishAllBtn){
+    els.publishAllBtn.disabled=true;
+    els.publishAllBtn.textContent='公開中…';
+  }
+
+  try{
+    const memberIds=new Set(memberTerms.filter(t=>t.createdBy===uid).map(t=>t.id));
+    const MAX_WRITES=450;
+    let batch=writeBatch(db);
+    let writes=0;
+    let published=0;
+
+    const commitBatch=async()=>{
+      if(!writes) return;
+      await batch.commit();
+      batch=writeBatch(db);
+      writes=0;
+    };
+
+    for(const item of needsPublish){
+      const data=item.data();
+      const base={
+        ...data,
+        visibility:'public',
+        is_shared:true,
+        createdBy:uid,
+        createdByName:data.createdByName || currentUser.displayName || '',
+        createdByEmail:data.createdByEmail || currentUser.email || '',
+        updatedAt:serverTimestamp()
+      };
+
+      const personalRef=doc(db,'user_research_dictionary',uid,'terms',item.id);
+      const publicRef=doc(db,'research_dictionary',item.id);
+      const membersDocRef=doc(db,MEMBERS_COLLECTION,item.id);
+
+      const requiredWrites=memberIds.has(item.id)?3:2;
+      if(writes + requiredWrites > MAX_WRITES) await commitBatch();
+
+      batch.set(personalRef,base,{merge:true});
+      batch.set(publicRef,base,{merge:true});
+      writes+=2;
+
+      if(memberIds.has(item.id)){
+        batch.delete(membersDocRef);
+        writes+=1;
+      }
+
+      published+=1;
+    }
+
+    await commitBatch();
+    showToast('已將 ' + published + ' 筆詞彙設為公開');
+  }catch(e){
+    console.error('Bulk publish failed',e);
+    showToast('全部公開失敗：' + e.message,true);
+  }finally{
+    if(els.publishAllBtn){
+      els.publishAllBtn.disabled=false;
+      els.publishAllBtn.textContent=originalText;
+    }
+  }
 }
 
 function setupDesktopAuthBanner(){
@@ -626,6 +722,7 @@ onAuthStateChanged(auth, user => {
   els.logoutBtn.classList.toggle('hidden', !user);
   els.addBtn.classList.toggle('hidden', !user);
   els.importBtn.classList.toggle('hidden', !user);
+  els.publishAllBtn?.classList.toggle('hidden', !user);
   els.mineWrap.classList.toggle('hidden', !user);
   if(!user) els.mineOnly.checked=false;
   subscribePrivateTerms(user);
@@ -644,6 +741,7 @@ els.desktopAuthorizeBtn?.addEventListener('click',authorizeDesktopLogin);
 els.logoutBtn.addEventListener('click', async()=>{ await signOut(auth); showToast('已登出'); });
 els.addBtn.addEventListener('click', ()=>openForm());
 els.importBtn.addEventListener('click', ()=>{ resetImportDialog(); els.importDialog.classList.remove('dialog-enter'); void els.importDialog.offsetWidth; els.importDialog.classList.add('dialog-enter'); els.importDialog.showModal(); });
+els.publishAllBtn?.addEventListener('click',publishAllMyTerms);
 els.closeImportDialog.addEventListener('click', ()=>els.importDialog.close());
 els.cancelImportDialog.addEventListener('click', ()=>els.importDialog.close());
 els.analyzeImportBtn.addEventListener('click', analyzeBatchJson);
@@ -789,7 +887,7 @@ els.mobileMenuBtn?.addEventListener('click',(event)=>{
   toggleMobileMenu();
 });
 els.mobileActionPanel?.addEventListener('click',(event)=>event.stopPropagation());
-[els.desktopDownloadBtn,els.loginBtn,els.logoutBtn,els.importBtn,els.addBtn].forEach(el=>{
+[els.desktopDownloadBtn,els.loginBtn,els.logoutBtn,els.importBtn,els.publishAllBtn,els.addBtn].forEach(el=>{
   el?.addEventListener('click',()=>closeMobileMenu());
 });
 document.addEventListener('click',(event)=>{
