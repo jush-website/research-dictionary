@@ -645,3 +645,155 @@ html[data-theme="light"] .chip.private{color:#65449a;background:rgba(121,80,184,
   .desktop-download-btn{padding:8px 10px}
   .desktop-download-btn small{display:none}
 }
+
+
+/* v13: compact mobile header + overflow menu */
+.secondary-actions{
+  display:flex;
+  align-items:center;
+  gap:10px;
+}
+.mobile-menu-btn{display:none}
+
+/* Keep desktop/tablet header behavior intact; only phones collapse secondary actions. */
+@media (max-width:620px){
+  .topbar{
+    height:68px!important;
+    min-height:68px!important;
+    padding:8px 12px!important;
+    gap:10px!important;
+    align-items:center!important;
+    flex-wrap:nowrap!important;
+  }
+  .brand{
+    min-width:0;
+    max-width:calc(100% - 100px);
+    gap:8px;
+    flex:1 1 auto;
+  }
+  .brand-mark{
+    width:40px;
+    height:40px;
+    flex:0 0 40px;
+    border-radius:12px;
+  }
+  .brand>span:last-child{min-width:0}
+  .brand strong{
+    max-width:150px;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+    font-size:15px;
+  }
+  .brand small{display:none!important}
+
+  .top-actions{
+    position:relative;
+    width:auto!important;
+    min-width:0!important;
+    flex:0 0 auto!important;
+    margin-left:auto;
+    display:flex!important;
+    align-items:center!important;
+    justify-content:flex-end!important;
+    flex-wrap:nowrap!important;
+    gap:7px!important;
+  }
+
+  .theme-toggle,
+  .mobile-menu-btn{
+    width:40px!important;
+    height:40px!important;
+    min-width:40px;
+    padding:0!important;
+    display:inline-flex!important;
+    align-items:center;
+    justify-content:center;
+    border:1px solid var(--line);
+    border-radius:12px;
+    background:rgba(255,255,255,.035);
+    color:var(--text);
+  }
+  .theme-toggle-text{display:none!important}
+  .mobile-menu-btn{
+    font-size:18px;
+    font-weight:800;
+    letter-spacing:1px;
+    line-height:1;
+  }
+  .mobile-menu-btn.active{
+    border-color:rgba(128,228,196,.38);
+    background:rgba(128,228,196,.09);
+  }
+
+  .secondary-actions{
+    display:none;
+    position:absolute;
+    top:calc(100% + 10px);
+    right:0;
+    z-index:80;
+    width:min(304px,calc(100vw - 24px));
+    max-height:calc(100vh - 92px);
+    overflow:auto;
+    padding:12px;
+    border:1px solid var(--line);
+    border-radius:16px;
+    background:linear-gradient(180deg,rgba(18,26,45,.99),rgba(10,16,29,.99));
+    box-shadow:0 24px 70px rgba(0,0,0,.38);
+    backdrop-filter:blur(22px);
+    grid-template-columns:1fr 1fr;
+    gap:8px;
+  }
+  .secondary-actions.mobile-open{display:grid}
+  .secondary-actions .font-size-control{
+    grid-column:1/-1;
+    width:100%!important;
+    height:44px;
+    margin:0;
+    padding:0 10px;
+    justify-content:space-between;
+    flex:0 0 auto!important;
+  }
+  .secondary-actions .font-size-control input[type="range"]{
+    width:min(145px,42vw)!important;
+    min-width:90px;
+  }
+  .secondary-actions .font-size-label{display:inline}
+  .secondary-actions .btn,
+  .secondary-actions .desktop-download-btn{
+    width:100%;
+    min-width:0;
+    min-height:42px;
+    margin:0;
+    padding:9px 10px;
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    text-align:center;
+    white-space:nowrap;
+  }
+  .secondary-actions .desktop-download-btn{grid-column:1/-1}
+  .secondary-actions .desktop-download-btn small{display:inline}
+  .secondary-actions #addBtn{grid-column:1/-1}
+
+  main{
+    width:min(100% - 20px,1180px)!important;
+    padding-top:12px!important;
+  }
+}
+
+/* Light theme for the mobile overflow panel. */
+@media (max-width:620px){
+  html[data-theme="light"] .secondary-actions{
+    background:linear-gradient(180deg,rgba(255,255,255,.99),rgba(246,249,253,.99));
+    box-shadow:0 22px 60px rgba(45,58,80,.18);
+  }
+  html[data-theme="light"] .mobile-menu-btn{
+    background:rgba(255,255,255,.72);
+    color:var(--text);
+  }
+  html[data-theme="light"] .mobile-menu-btn.active{
+    background:rgba(22,139,106,.08);
+    border-color:rgba(22,139,106,.22);
+  }
+}
