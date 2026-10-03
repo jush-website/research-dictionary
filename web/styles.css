@@ -375,3 +375,121 @@ html[data-theme="light"] .chip.private{color:#65449a;background:rgba(121,80,184,
 .import-share-all{display:flex!important;align-items:center;gap:8px;color:var(--muted);font-size:13px;margin:10px 0 0}.import-share-all input{width:auto;accent-color:#84a0ff}
 .import-format{margin:10px 0 0;color:var(--muted);font-size:13px;line-height:1.7}.import-format summary{cursor:pointer;color:var(--text);font-weight:600}.import-format code{color:var(--accent2)}
 .import-share-all select{color:var(--text);background:#0b1120;border:1px solid var(--line);border-radius:10px;padding:7px 10px;width:auto}
+
+
+/* v10: tablet responsive query/layout fix */
+/* Prevent tablet header controls from widening the page and shifting the query panel. */
+@media (max-width:1100px){
+  .topbar{
+    height:auto;
+    min-height:78px;
+    padding:10px 16px;
+    gap:12px;
+    align-items:center;
+  }
+  .brand{flex:0 1 auto;min-width:0}
+  .brand>span:last-child{min-width:0}
+  .brand strong{
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+  }
+  .top-actions{
+    min-width:0;
+    flex:1 1 auto;
+    display:flex;
+    justify-content:flex-end;
+    align-items:center;
+    flex-wrap:wrap;
+    gap:8px;
+  }
+
+  /* Tablet widths use the stable one-column query layout. */
+  main{width:min(100% - 28px,1180px)}
+  .dictionary-layout{
+    grid-template-columns:minmax(0,1fr);
+    gap:14px;
+  }
+  .search-sidebar{
+    position:static;
+    top:auto;
+    min-width:0;
+    max-width:100%;
+    width:100%;
+    padding:14px;
+    display:flex;
+    flex-direction:column;
+  }
+  .search-sidebar .search-wrap{
+    order:1;
+    width:100%;
+    min-width:0;
+    max-width:100%;
+    overflow:hidden;
+  }
+  .search-sidebar .search-wrap input{
+    flex:1 1 0;
+    width:auto;
+    min-width:0;
+  }
+  .search-sidebar .search-tip{order:2}
+  .search-sidebar .sidebar-title-row{
+    order:3;
+    align-items:center;
+    margin-bottom:10px;
+  }
+  .search-sidebar .sidebar-title-row>div{display:none}
+  .mobile-filter-toggle{
+    display:inline-flex;
+    align-items:center;
+    margin-left:auto;
+  }
+  .search-sidebar .filter-panel{
+    order:4;
+    display:none;
+    width:100%;
+    min-width:0;
+    max-width:100%;
+    margin-top:10px;
+    padding-top:12px;
+  }
+  .search-sidebar .filter-panel.mobile-open{display:grid}
+  .filter-field,
+  .filter-field select,
+  .filter-toggles,
+  .sidebar-clear-btn{
+    min-width:0;
+    max-width:100%;
+  }
+  .dictionary-content{min-width:0;max-width:100%}
+  .dictionary-content .terms-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .results-bar{padding-top:2px}
+
+  /* Ctrl+K is desktop-only; removing it on touch/tablet gives the input room. */
+  .search-shortcut{display:none!important}
+}
+
+/* Portrait tablets: allow the header settings row to occupy a clean second line. */
+@media (max-width:820px){
+  .topbar{align-items:flex-start}
+  .top-actions{flex:1 1 100%;width:100%;justify-content:flex-end}
+  .font-size-control{
+    width:auto;
+    max-width:100%;
+    flex:1 1 190px;
+    justify-content:flex-end;
+  }
+  .font-size-control input[type="range"]{
+    width:min(160px,32vw);
+    min-width:80px;
+  }
+  .results-bar{min-width:0}
+  .results-bar>div{min-width:0}
+}
+
+/* Phones keep the compact single-column cards and full-width filter trigger. */
+@media (max-width:620px){
+  .top-actions{justify-content:flex-start}
+  .font-size-control{width:100%;flex:1 1 100%}
+  .dictionary-content .terms-grid{grid-template-columns:1fr}
+}
