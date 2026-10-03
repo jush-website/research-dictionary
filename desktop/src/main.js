@@ -521,50 +521,39 @@ async function startDesktopLogin() {
         if (expiresAtMs && Date.now() > expiresAtMs) {
           throw new Error('登入授權已逾時，請重新登入');
         }
-        if (!data.googleIdToken && !data.googleAccessToken) {
-          throw new Error('網站沒有回傳可用的 Google 登入憑證');
-        }
+
+        const session = await exchangeGoogleCredentialForFirebase(data);
 
         try {
-          const credential = GoogleAuthProvider.credential(
-            data.googleIdToken || null,
-            data.googleAccessToken || null
-          );
-          const result = await signInWithCredential(auth, credential);
-          try { await deleteDoc(ref); } catch {}
-
-          loginPending = false;
-          loginMessage = '';
-          loginError = '';
-          loginSessionId = '';
-          showToast('已登入 ' + (result.user.displayName || result.user.email || 'Google 帳號'));
-          await loadTerms(true);
-          render();
-          return;
-        } catch (authError) {
-          loginPending = false;
-          loginMessage = '';
-          loginError = (authError?.code ? authError.code + '：' : '') + String(authError?.message || authError);
-          showToast('桌面登入失敗：' + loginError, true);
-          render();
-          return;
+          await restDeleteDocument(LOGIN_SESSION_COLLECTION + '/' + loginSessionId);
+        } catch (cleanupError) {
+          console.warn('Desktop login session cleanup failed:', cleanupError);
         }
+
+        loginPending = false;
+        loginMessage = '';
+        loginError = '';
+        loginSessionId = '';
+        showToast('已登入 ' + (session.displayName || session.email || 'Google 帳號'));
+        await loadTerms(true);
+        render();
+        return;
       }
     } catch (error) {
       const text = String(error?.message || error);
       if (/permission|permissions|insufficient/i.test(text)) {
         loginPending = false;
         loginMessage = '';
-        loginError = 'Firestore 權限不足。請先發布新版 Security Rules。';
+        loginError = 'Firestore 權限不足。請重新發布最新版 Security Rules。';
         showToast(loginError, true);
         render();
         return;
       }
-      if (/逾時|憑證/.test(text)) {
+      if (/逾時|OAuth 交換失敗|憑證/.test(text)) {
         loginPending = false;
         loginMessage = '';
         loginError = text;
-        showToast(text, true);
+        showToast('桌面登入失敗：' + text, true);
         render();
         return;
       }
@@ -599,9 +588,11 @@ function cancelDesktopLogin() {
 
 async function logoutDesktop() {
   cancelDesktopLogin();
-  await signOut(auth);
+  persistAuthSession(null);
+  privateTerms = [];
   selectedTerm = null;
   scopeFilter = 'all';
+  mergeTerms();
   showToast('已登出');
 }
 
