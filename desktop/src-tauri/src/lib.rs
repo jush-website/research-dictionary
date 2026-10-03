@@ -153,9 +153,6 @@ fn update_client() -> Result<reqwest::blocking::Client, String> {
         .map_err(|e| format!("無法建立更新連線：{e}"))
 }
 
-fn ps_quote(value: &str) -> String {
-    value.replace('\'', "''")
-}
 
 #[tauri::command]
 fn check_for_update(current_version: String) -> Result<Option<Vec<String>>, String> {
@@ -264,6 +261,7 @@ fn install_update(
             return Err("更新檔 SHA-256 格式不正確。".to_string());
         }
 
+        // Download and verify entirely inside Rust. No PowerShell or script host is used.
         let client = update_client()?;
         let response = client
             .get(&download_url)
@@ -293,58 +291,27 @@ fn install_update(
             .map_err(|e| format!("無法建立更新暫存資料夾：{e}"))?;
 
         let installer = temp_dir.join("ResearchDictionary-Setup.exe");
-        let updater_script = temp_dir.join("install-update.ps1");
+        let helper = temp_dir.join("ResearchDictionaryUpdater.exe");
 
         fs::write(&installer, &bytes)
             .map_err(|e| format!("無法寫入更新檔：{e}"))?;
 
-        let script = format!(
-            r#"$ErrorActionPreference='Stop'
-Start-Sleep -Seconds 2
-$installer='{installer}'
-$p=Start-Process -FilePath $installer -ArgumentList '/S' -Wait -PassThru
-if($p.ExitCode -ne 0) {{ exit $p.ExitCode }}
+        let current_exe = std::env::current_exe()
+            .map_err(|e| format!("無法取得目前程式路徑：{e}"))?;
 
-$candidates=@(
-  "$env:LOCALAPPDATA\Research Dictionary\ResearchDictionary.exe",
-  "$env:LOCALAPPDATA\Programs\Research Dictionary\ResearchDictionary.exe"
-)
-$app=$candidates | Where-Object {{ Test-Path $_ }} | Select-Object -First 1
-if(-not $app) {{
-  $found=Get-ChildItem -Path $env:LOCALAPPDATA -Filter 'ResearchDictionary.exe' -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-  if($found) {{ $app=$found.FullName }}
-}}
-if($app) {{ Start-Process -FilePath $app }}
-Remove-Item -LiteralPath $installer -Force -ErrorAction SilentlyContinue
-$folder=Split-Path -Parent $MyInvocation.MyCommand.Path
-$me=$MyInvocation.MyCommand.Path
-Start-Sleep -Milliseconds 500
-Remove-Item -LiteralPath $me -Force -ErrorAction SilentlyContinue
-Remove-Item -LiteralPath $folder -Force -Recurse -ErrorAction SilentlyContinue
-"#,
-            installer = ps_quote(&installer.to_string_lossy())
-        );
+        fs::copy(&current_exe, &helper)
+            .map_err(|e| format!("無法建立原生更新助手：{e}"))?;
 
-        fs::write(&updater_script, script)
-            .map_err(|e| format!("無法建立更新安裝腳本：{e}"))?;
-
-        let updater_script_text = updater_script.to_string_lossy().to_string();
-
-        Command::new("powershell.exe")
+        // The helper is a copy of this signed/built GUI executable in TEMP.
+        // It waits for the original process to exit, runs the NSIS installer
+        // directly, and then relaunches the installed app. No shell is involved.
+        Command::new(&helper)
             .creation_flags(CREATE_NO_WINDOW)
-            .args([
-                "-NoLogo",
-                "-NoProfile",
-                "-NonInteractive",
-                "-ExecutionPolicy",
-                "Bypass",
-                "-WindowStyle",
-                "Hidden",
-                "-File",
-                updater_script_text.as_str(),
-            ])
+            .arg("--apply-update")
+            .arg(&installer)
+            .arg(&current_exe)
             .spawn()
-            .map_err(|e| format!("無法啟動背景更新安裝：{e}"))?;
+            .map_err(|e| format!("無法啟動原生更新助手：{e}"))?;
 
         app.exit(0);
         Ok(())
