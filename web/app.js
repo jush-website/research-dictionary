@@ -235,13 +235,13 @@ async function syncPersonalTerm(termId,payload,original=null){
     createdAt,
     updatedAt:serverTimestamp()
   };
-  await setDoc(personalRef,base,{merge:true});
-
-  if(visibility==='public') await setDoc(publicRef,base,{merge:true});
-  else if(publicTerms.some(t=>t.id===termId && t.createdBy===uid)) await deleteDoc(publicRef);
-
-  if(visibility==='members') await setDoc(membersDocRef,base,{merge:true});
-  else if(memberTerms.some(t=>t.id===termId && t.createdBy===uid)) await deleteDoc(membersDocRef);
+  const batch=writeBatch(db);
+  batch.set(personalRef,base,{merge:true});
+  if(visibility==='public') batch.set(publicRef,base,{merge:true});
+  else if(publicTerms.some(t=>t.id===termId && t.createdBy===uid)) batch.delete(publicRef);
+  if(visibility==='members') batch.set(membersDocRef,base,{merge:true});
+  else if(memberTerms.some(t=>t.id===termId && t.createdBy===uid)) batch.delete(membersDocRef);
+  await batch.commit();
 }
 
 async function deletePersonalTerm(term){
@@ -254,11 +254,11 @@ async function deletePersonalTerm(term){
     return;
   }
 
-  await deleteDoc(doc(db,'user_research_dictionary',uid,'terms',term.id)).catch(()=>{});
-  const shared=publicTerms.find(t=>t.id===term.id && t.createdBy===uid);
-  if(shared) await deleteDoc(doc(db,'research_dictionary',term.id));
-  const memberCopy=memberTerms.find(t=>t.id===term.id && t.createdBy===uid);
-  if(memberCopy) await deleteDoc(doc(db,MEMBERS_COLLECTION,term.id));
+  const batch=writeBatch(db);
+  batch.delete(doc(db,'user_research_dictionary',uid,'terms',term.id));
+  if(publicTerms.some(t=>t.id===term.id && t.createdBy===uid)) batch.delete(doc(db,'research_dictionary',term.id));
+  if(memberTerms.some(t=>t.id===term.id && t.createdBy===uid)) batch.delete(doc(db,MEMBERS_COLLECTION,term.id));
+  await batch.commit();
 }
 
 async function publishAllMyTerms(){
@@ -633,7 +633,7 @@ function analyzeBatchJson(){
   pendingImportRows=[];
   const localAccepted=[];
   for(const raw of parsed){
-    const term=normalizeImportTerm(raw);
+    const term=normalizeImportTerm(raw && typeof raw==='object' ? raw : {});
     const missing=validateImportTerm(term);
     if(missing.length){ pendingImportRows.push({kind:'invalid',term,missing,force:false}); continue; }
     const exact=findDuplicate(term.term_en,term.term_zh);
@@ -673,6 +673,7 @@ async function executeBatchImport(){
         if(visibility==='members') batch.set(doc(membersRef,ref.id),data);
       });
       await batch.commit();
+      rows.slice(i,i+200).forEach(row=>{ row.kind='skip'; row.force=false; });
     }
     showToast(`已匯入 ${rows.length} 個研究詞彙`);
     els.importDialog.close();
@@ -717,7 +718,15 @@ function updateDuplicateHint(){
 }
 
 onAuthStateChanged(auth, user => {
+  const previousUid=currentUser?.uid;
   currentUser = user;
+  if(previousUid && previousUid!==user?.uid){
+    els.detailDialog.close();
+    els.detailContent.textContent='';
+    els.termDialog.close();
+    els.importDialog.close();
+    resetImportDialog();
+  }
   els.loginBtn.classList.toggle('hidden', !!user);
   els.logoutBtn.classList.toggle('hidden', !user);
   els.addBtn.classList.toggle('hidden', !user);

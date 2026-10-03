@@ -3,7 +3,7 @@ import sampleImportJson from '../../web/sample-import.json?raw';
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { getVersion } from '@tauri-apps/api/app';
-import { register, unregisterAll } from '@tauri-apps/plugin-global-shortcut';
+import { listen } from '@tauri-apps/api/event';
 import { enable as enableAutostart, disable as disableAutostart, isEnabled as isAutostartEnabled } from '@tauri-apps/plugin-autostart';
 
 // Firebase Web Config 可安全存在前端；不要在此放 Admin SDK / Service Account 私鑰。
@@ -48,6 +48,7 @@ let memberTerms = [];
 let terms = [];
 let currentUser = null;
 let authSession = null;
+let authGeneration = 0;
 let searchText = '';
 let selectedTerm = null;
 let loading = true;
@@ -82,6 +83,7 @@ let toastTimer = null;
 let theme = loadTheme();
 let fontScale = loadFontScale();
 let displayLimit = loadDisplayLimit();
+let loadGeneration = 0;
 
 applyTheme(theme, false);
 applyFontScale(fontScale, false);
@@ -215,6 +217,17 @@ function mergeTerms() {
   localStorage.setItem(CACHE_KEY, JSON.stringify(terms));
 }
 
+function visibleCachedTerms(cached) {
+  if (!Array.isArray(cached)) return [];
+  return cached.filter(term => {
+    if (!term || typeof term !== 'object') return false;
+    if (term.visibility === 'public' || term._origin === 'public') return true;
+    if (!currentUser) return false;
+    if (term.visibility === 'members' || term._origin === 'members') return true;
+    return term.createdBy === currentUser.uid;
+  });
+}
+
 function canEdit(term) {
   if (!currentUser || !term) return false;
   return term.createdBy === currentUser.uid || (currentUser.uid === ADMIN_UID && ['public', 'members'].includes(term._origin));
@@ -249,6 +262,7 @@ function loadSavedAuthSession() {
 }
 
 function persistAuthSession(session) {
+  if (!session || session.uid !== authSession?.uid) authGeneration += 1;
   authSession = session;
   if (session) {
     localStorage.setItem(AUTH_SESSION_KEY, JSON.stringify(session));
@@ -260,10 +274,14 @@ function persistAuthSession(session) {
   } else {
     localStorage.removeItem(AUTH_SESSION_KEY);
     currentUser = null;
+    privateTerms = [];
+    memberTerms = [];
+    selectedTerm = null;
+    mergeTerms();
   }
 }
 
-async function exchangeGoogleCredentialForFirebase(data) {
+async function exchangeGoogleCredentialForFirebase(data, isActive = () => true) {
   const attempts = [];
   if (data.googleIdToken) attempts.push('id_token=' + encodeURIComponent(data.googleIdToken) + '&providerId=google.com');
   if (data.googleAccessToken) attempts.push('access_token=' + encodeURIComponent(data.googleAccessToken) + '&providerId=google.com');
@@ -271,6 +289,7 @@ async function exchangeGoogleCredentialForFirebase(data) {
 
   let lastError = '';
   for (const postBody of attempts) {
+    if (!isActive()) throw new Error('登入已取消');
     const response = await fetch(AUTH_SIGNIN_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -283,6 +302,7 @@ async function exchangeGoogleCredentialForFirebase(data) {
     });
 
     const json = await response.json().catch(() => ({}));
+    if (!isActive()) throw new Error('登入已取消');
     if (response.ok && json.idToken && json.refreshToken && json.localId) {
       const session = {
         uid: json.localId,
@@ -308,9 +328,11 @@ async function ensureFirebaseIdToken(force = false) {
     return authSession.idToken;
   }
 
+  const session = authSession;
+  const generation = authGeneration;
   const body = new URLSearchParams({
     grant_type: 'refresh_token',
-    refresh_token: authSession.refreshToken
+    refresh_token: session.refreshToken
   });
 
   const response = await fetch(AUTH_REFRESH_URL, {
@@ -320,15 +342,16 @@ async function ensureFirebaseIdToken(force = false) {
   });
 
   const json = await response.json().catch(() => ({}));
+  if (generation !== authGeneration) throw new Error('登入狀態已變更');
   if (!response.ok || !json.id_token) {
     persistAuthSession(null);
     throw new Error('登入已失效：' + (json?.error?.message || ('HTTP ' + response.status)));
   }
 
   authSession = {
-    ...authSession,
+    ...session,
     idToken: json.id_token,
-    refreshToken: json.refresh_token || authSession.refreshToken,
+    refreshToken: json.refresh_token || session.refreshToken,
     expiresAtMs: Date.now() + (Number(json.expires_in || 3600) * 1000) - 60000
   };
   persistAuthSession(authSession);
@@ -344,11 +367,12 @@ async function restoreDesktopSession() {
     displayName: saved.displayName || '',
     email: saved.email || ''
   };
+  const generation = authGeneration;
   try {
     await ensureFirebaseIdToken();
   } catch (error) {
     console.warn('Stored desktop auth session expired:', error);
-    persistAuthSession(null);
+    if (generation === authGeneration) persistAuthSession(null);
   }
 }
 
@@ -567,6 +591,7 @@ async function runImport() {
       });
       await restCommit(writes);
       done += chunk.length;
+      chunk.forEach(row => { row.kind = 'skip'; row.note = '已匯入'; });
     }
     importBusy = false;
     importOpen = false;
@@ -665,7 +690,8 @@ function applyFontScale(value, persist = true) {
 }
 
 function loadDisplayLimit() {
-  const saved = Number(localStorage.getItem(DISPLAY_LIMIT_KEY));
+  const raw = localStorage.getItem(DISPLAY_LIMIT_KEY);
+  const saved = raw === null || raw.trim() === '' ? NaN : Number(raw);
   return DISPLAY_LIMIT_OPTIONS.includes(saved) ? saved : 72;
 }
 
@@ -713,12 +739,15 @@ async function startDesktopLogin() {
   loginPending = true;
   loginError = '';
   loginMessage = '已開啟瀏覽器，等待 Google 登入授權…';
-  loginSessionId = makeSessionId();
+  const sessionId = makeSessionId();
+  loginSessionId = sessionId;
+  const isActive = () => loginPending && loginSessionId === sessionId;
   render();
 
   try {
-    await invoke('open_desktop_login_url', { sessionId: loginSessionId });
+    await invoke('open_desktop_login_url', { sessionId });
   } catch (error) {
+    if (!isActive()) return;
     loginPending = false;
     loginMessage = '';
     loginError = String(error?.message || error);
@@ -727,15 +756,17 @@ async function startDesktopLogin() {
     return;
   }
 
+  if (!isActive()) return;
   let attempts = 0;
   let lastPollError = '';
   const poll = async () => {
-    if (!loginPending || !loginSessionId) return;
+    if (!isActive()) return;
     attempts += 1;
 
     try {
-      const response = await fetch(FIRESTORE_REST_BASE + '/' + LOGIN_SESSION_COLLECTION + '/' + encodeURIComponent(loginSessionId));
+      const response = await fetch(FIRESTORE_REST_BASE + '/' + LOGIN_SESSION_COLLECTION + '/' + encodeURIComponent(sessionId));
       const json = await response.json().catch(() => ({}));
+      if (!isActive()) return;
       if (!response.ok) throw Object.assign(new Error(json?.error?.message || ('Firestore HTTP ' + response.status)), { code: json?.error?.status });
 
       const data = fromFirestoreFields(json.fields || {});
@@ -744,14 +775,15 @@ async function startDesktopLogin() {
         throw new Error('登入授權已逾時，請重新登入');
       }
 
-      const session = await exchangeGoogleCredentialForFirebase(data);
+      const session = await exchangeGoogleCredentialForFirebase(data, isActive);
 
       try {
-        await restDeleteDocument(LOGIN_SESSION_COLLECTION + '/' + loginSessionId);
+        await restDeleteDocument(LOGIN_SESSION_COLLECTION + '/' + sessionId);
       } catch (cleanupError) {
         console.warn('Desktop login session cleanup failed:', cleanupError);
       }
 
+      if (!isActive()) return;
       loginPending = false;
       loginMessage = '';
       loginError = '';
@@ -761,6 +793,7 @@ async function startDesktopLogin() {
       render();
       return;
     } catch (error) {
+      if (!isActive()) return;
       const text = String(error?.message || error);
       // Rules only allow get on an existing, unexpired session, so a missing
       // document (web login not finished yet) also returns permission-denied.
@@ -1430,12 +1463,14 @@ async function saveEditor(event) {
         updatedAt: now
       };
 
-      // Private copy always; the public or members copy (same id) follows the chosen visibility.
-      await restSetDocument(PRIVATE_ROOT + '/' + uid + '/terms/' + termId, fullPayload);
+      // Change all copies atomically so a failed visibility change cannot leave stale copies.
+      const fields = firestoreFields(fullPayload);
+      const writes = [{ update: { name: FIRESTORE_DOC_PREFIX + PRIVATE_ROOT + '/' + uid + '/terms/' + termId, fields } }];
       for (const [level, path, copies] of [['public', COLLECTION_NAME, publicTerms], ['members', MEMBERS_COLLECTION, memberTerms]]) {
-        if (payload.visibility === level) await restSetDocument(path + '/' + termId, fullPayload);
-        else if (copies.some((term) => term.id === termId && term.createdBy === uid)) await restDeleteDocument(path + '/' + termId);
+        if (payload.visibility === level) writes.push({ update: { name: FIRESTORE_DOC_PREFIX + path + '/' + termId, fields } });
+        else if (copies.some(term => term.id === termId && term.createdBy === uid)) writes.push({ delete: FIRESTORE_DOC_PREFIX + path + '/' + termId });
       }
+      await restCommit(writes);
     }
 
     editorOpen = false;
@@ -1460,9 +1495,10 @@ async function deleteTerm(term) {
     if (term.createdBy !== uid && uid === ADMIN_UID && ['public', 'members'].includes(term._origin)) {
       await restDeleteDocument((term._origin === 'members' ? MEMBERS_COLLECTION : COLLECTION_NAME) + '/' + term.id);
     } else {
-      try { await restDeleteDocument(PRIVATE_ROOT + '/' + uid + '/terms/' + term.id); } catch {}
-      if (publicTerms.some((item) => item.id === term.id && item.createdBy === uid)) await restDeleteDocument(COLLECTION_NAME + '/' + term.id);
-      if (memberTerms.some((item) => item.id === term.id && item.createdBy === uid)) await restDeleteDocument(MEMBERS_COLLECTION + '/' + term.id);
+      const writes = [{ delete: FIRESTORE_DOC_PREFIX + PRIVATE_ROOT + '/' + uid + '/terms/' + term.id }];
+      if (publicTerms.some(item => item.id === term.id && item.createdBy === uid)) writes.push({ delete: FIRESTORE_DOC_PREFIX + COLLECTION_NAME + '/' + term.id });
+      if (memberTerms.some(item => item.id === term.id && item.createdBy === uid)) writes.push({ delete: FIRESTORE_DOC_PREFIX + MEMBERS_COLLECTION + '/' + term.id });
+      await restCommit(writes);
     }
 
     selectedTerm = null;
@@ -1474,6 +1510,8 @@ async function deleteTerm(term) {
 }
 
 async function loadTerms(force = false) {
+  const generation = ++loadGeneration;
+  const uid = currentUser?.uid;
   loading = true;
   sourceState = 'loading';
   if (force) selectedTerm = null;
@@ -1488,17 +1526,24 @@ async function loadTerms(force = false) {
       _origin: 'public'
     }));
 
+    if (generation !== loadGeneration || uid !== currentUser?.uid) return;
     if (currentUser) {
       try {
-        privateTerms = await listPrivateTerms(currentUser.uid);
+        const loaded = await listPrivateTerms(uid);
+        if (generation !== loadGeneration || uid !== currentUser?.uid) return;
+        privateTerms = loaded;
       } catch (privateError) {
+        if (generation !== loadGeneration || uid !== currentUser?.uid) return;
         console.warn('Private dictionary unavailable:', privateError);
         privateTerms = [];
         showToast('私人辭典同步失敗：' + (privateError?.message || privateError), true);
       }
       try {
-        memberTerms = await restListDocuments(MEMBERS_COLLECTION, await ensureFirebaseIdToken());
+        const loaded = await restListDocuments(MEMBERS_COLLECTION, await ensureFirebaseIdToken());
+        if (generation !== loadGeneration || uid !== currentUser?.uid) return;
+        memberTerms = loaded;
       } catch (memberError) {
+        if (generation !== loadGeneration || uid !== currentUser?.uid) return;
         console.warn('Members dictionary unavailable:', memberError);
         memberTerms = [];
         showToast('登入可見辭典同步失敗：' + (memberError?.message || memberError), true);
@@ -1511,11 +1556,13 @@ async function loadTerms(force = false) {
     mergeTerms();
     sourceState = 'online';
   } catch (error) {
+    if (generation !== loadGeneration || uid !== currentUser?.uid) return;
     console.error('Firestore load failed:', error);
+    terms = visibleCachedTerms(terms);
     const cached = localStorage.getItem(CACHE_KEY);
     if (cached) {
       try {
-        terms = JSON.parse(cached);
+        terms = visibleCachedTerms(JSON.parse(cached));
         sourceState = 'cache';
       } catch {
         sourceState = 'error';
@@ -1524,8 +1571,7 @@ async function loadTerms(force = false) {
       sourceState = 'error';
     }
   } finally {
-    loading = false;
-    render();
+    if (generation === loadGeneration) { loading = false; render(); }
   }
 }
 
@@ -1567,10 +1613,14 @@ async function openWebsite() {
   }
 }
 
-async function lookupSelectedText() {
-  if (settingsOpen || editorOpen || capturingShortcut) return;
+async function lookupSelectedText({ text = '', error = '' } = {}) {
+  if (settingsOpen || editorOpen || importOpen || capturingShortcut) return;
   try {
-    const captured = String(await invoke('capture_selected_text') || '').trim();
+    if (error) throw new Error(error);
+    const captured = String(text || '').trim();
+    categoryFilter = '';
+    statusFilter = '';
+    scopeFilter = 'all';
     await showSearchWindow({ focusSearch: false });
     if (!captured) {
       searchText = '';
@@ -1601,23 +1651,11 @@ async function lookupSelectedText() {
 async function registerHotkeys(config = shortcutConfig) {
   hotkeyState = 'loading';
   hotkeyError = '';
-  try { await unregisterAll(); } catch {}
-
   try {
-    await register(config.lookup, (event) => {
-      if (event.state === 'Released' && !settingsOpen && !editorOpen && !capturingShortcut) lookupSelectedText();
-    });
-    await register(config.search, async (event) => {
-      if (event.state !== 'Released' || settingsOpen || editorOpen || capturingShortcut) return;
-      searchText = '';
-      selectedTerm = null;
-      render();
-      await showSearchWindow();
-    });
+    await invoke('configure_shortcuts', { config });
     hotkeyState = 'ready';
     hotkeyError = '';
   } catch (error) {
-    try { await unregisterAll(); } catch {}
     hotkeyState = 'error';
     hotkeyError = String(error?.message || error || '未知錯誤');
     throw error;
@@ -1746,17 +1784,21 @@ window.addEventListener('keydown', (e) => {
 });
 
 window.addEventListener('DOMContentLoaded', async () => {
+  await listen('lookup-selected-text', ({ payload }) => lookupSelectedText(payload));
+  await listen('open-search', () => {
+    if (settingsOpen || editorOpen || importOpen || capturingShortcut) return;
+    searchText = '';
+    selectedTerm = null;
+    render();
+    showSearchWindow().catch(error => showToast('開啟搜尋失敗：' + error, true));
+  });
   try { appVersion = await getVersion(); } catch {}
+  render();
+  try { await registerHotkeys(shortcutConfig); }
+  catch (error) { console.error('Global shortcut registration failed:', error); }
+  render();
   await restoreDesktopSession();
-  render();
   await loadTerms();
-  try {
-    await registerHotkeys(shortcutConfig);
-  } catch (error) {
-    console.error('Global shortcut registration failed:', error);
-  }
-  render();
-
   window.setTimeout(() => checkForUpdates({ manual: false }), 5000);
   window.setInterval(() => checkForUpdates({ manual: false }), 4 * 60 * 60 * 1000);
 });

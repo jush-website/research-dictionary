@@ -50,6 +50,9 @@ jobs:
         working-directory: desktop
         run: npm install
 
+      - name: Test web and desktop data regressions
+        run: node --test tests/regressions.test.mjs
+
       - name: Test native updater discovery
         working-directory: desktop/src-tauri
         env:
@@ -97,6 +100,8 @@ jobs:
             - v0.5.8：公開詞彙改用 Firestore REST 讀取，修正連線異常時只顯示自己私人詞彙的問題
             - v0.5.9：可見範圍新增「登入可見」（私人／登入可見／共享），匯入時可一次指定
             - v0.5.10：修正桌面版固定只顯示 36 筆，顯示筆數可選 36／72／144／300／全部並記住設定
+            - v0.5.11：修正全域快捷鍵在背景／最小化時無法喚回，反白查詢會等待按鍵放開再複製
+            - v0.5.11：防止重複啟動、延遲登入回應與帳號切換資料殘留，修正匯入重試及詞彙可見性更新
             - Google 登入後可新增、修改、刪除自己的詞彙
             - 每筆詞彙可選私人或共享
             - 字體大小、Light / Dark、自訂全域快捷鍵
