@@ -62,6 +62,7 @@ jobs:
             - 完整詞彙內容、動態分類與可收合篩選
             - v0.5.2：精簡上方工具列，增加詞彙閱讀空間
             - v0.5.2：改善桌面 Google 登入接力與錯誤提示
+            - v0.5.5：桌面登入改用 Firebase Auth REST，繞過 Tauri WebView 的 credential 登入相容問題
             - Google 登入後可新增、修改、刪除自己的詞彙
             - 每筆詞彙可選私人或共享
             - 字體大小、Light / Dark、自訂全域快捷鍵
