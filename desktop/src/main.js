@@ -681,7 +681,7 @@ function renderAccountBar() {
 
   return `
     <div class="account-inline">
-      ${loginError ? `<span class="login-error" title="${escapeHtml(loginError)}">登入失敗</span>` : ''}
+      ${loginError ? `<button class="login-error" id="loginErrorBtn" title="${escapeHtml(loginError)}">登入失敗：${escapeHtml(loginError)}</button>` : ''}
       ${loginPending
         ? '<button class="toolbar-btn" id="cancelLoginBtn">等待登入… ×</button>'
         : '<button class="toolbar-btn accent" id="loginBtn">Google 登入</button>'}
@@ -979,6 +979,7 @@ function wireEvents() {
   });
 
   document.querySelector('#loginBtn')?.addEventListener('click', startDesktopLogin);
+  document.querySelector('#loginErrorBtn')?.addEventListener('click', () => showToast(loginError || '登入失敗', true));
   document.querySelector('#cancelLoginBtn')?.addEventListener('click', cancelDesktopLogin);
   document.querySelector('#logoutBtn')?.addEventListener('click', logoutDesktop);
   document.querySelector('#addTermBtn')?.addEventListener('click', () => {
@@ -1469,15 +1470,11 @@ window.addEventListener('keydown', (e) => {
   }
 });
 
-onAuthStateChanged(auth, async (user) => {
-  currentUser = user;
-  if (!user) privateTerms = [];
-  await loadTerms(true);
-});
-
 window.addEventListener('DOMContentLoaded', async () => {
   try { appVersion = await getVersion(); } catch {}
+  await restoreDesktopSession();
   render();
+  await loadTerms();
   try {
     await registerHotkeys(shortcutConfig);
   } catch (error) {
