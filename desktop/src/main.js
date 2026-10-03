@@ -1137,41 +1137,38 @@ async function saveEditor(event) {
   try {
     const uid = currentUser.uid;
     const isAdminEditingOther = original && original.createdBy !== uid && uid === ADMIN_UID && original._origin === 'public';
+    const now = new Date().toISOString();
 
     if (isAdminEditingOther) {
-      await updateDoc(doc(db, COLLECTION_NAME, original.id), {
+      const fullPayload = {
+        ...original,
         ...payload,
         is_shared: true,
-        updatedAt: serverTimestamp()
-      });
+        updatedAt: now
+      };
+      await restSetDocument(COLLECTION_NAME + '/' + original.id, fullPayload);
     } else {
       if (original && original.createdBy && original.createdBy !== uid) {
         throw new Error('你只能修改自己建立的詞彙');
       }
 
-      const termId = original?.id || doc(collection(db, PRIVATE_ROOT, uid, 'terms')).id;
-      const personalRef = doc(db, PRIVATE_ROOT, uid, 'terms', termId);
-      const publicRef = doc(db, COLLECTION_NAME, termId);
-      const createdAt = original?.createdAt || serverTimestamp();
-      const ownerData = {
-        createdBy: uid,
-        createdByName: currentUser.displayName || '',
-        createdByEmail: currentUser.email || ''
-      };
+      const termId = original?.id || crypto.randomUUID().replace(/-/g, '');
       const fullPayload = {
         ...payload,
-        ...ownerData,
-        createdAt,
-        updatedAt: serverTimestamp()
+        createdBy: uid,
+        createdByName: currentUser.displayName || '',
+        createdByEmail: currentUser.email || '',
+        createdAt: original?.createdAt || now,
+        updatedAt: now
       };
 
-      await setDoc(personalRef, fullPayload, { merge: true });
+      await restSetDocument(PRIVATE_ROOT + '/' + uid + '/terms/' + termId, fullPayload);
 
       if (payload.is_shared) {
-        await setDoc(publicRef, { ...fullPayload, is_shared: true }, { merge: true });
+        await restSetDocument(COLLECTION_NAME + '/' + termId, { ...fullPayload, is_shared: true });
       } else {
         const publicCopy = publicTerms.find((term) => term.id === termId && term.createdBy === uid);
-        if (publicCopy) await deleteDoc(publicRef);
+        if (publicCopy) await restDeleteDocument(COLLECTION_NAME + '/' + termId);
       }
     }
 
@@ -1195,12 +1192,13 @@ async function deleteTerm(term) {
   try {
     const uid = currentUser.uid;
     if (term.createdBy !== uid && uid === ADMIN_UID && term._origin === 'public') {
-      await deleteDoc(doc(db, COLLECTION_NAME, term.id));
+      await restDeleteDocument(COLLECTION_NAME + '/' + term.id);
     } else {
-      await deleteDoc(doc(db, PRIVATE_ROOT, uid, 'terms', term.id)).catch(() => {});
+      try { await restDeleteDocument(PRIVATE_ROOT + '/' + uid + '/terms/' + term.id); } catch {}
       const publicCopy = publicTerms.find((item) => item.id === term.id && item.createdBy === uid);
-      if (publicCopy) await deleteDoc(doc(db, COLLECTION_NAME, term.id));
+      if (publicCopy) await restDeleteDocument(COLLECTION_NAME + '/' + term.id);
     }
+
     selectedTerm = null;
     showToast('詞彙已刪除');
     await loadTerms(true);
@@ -1214,21 +1212,23 @@ async function loadTerms(force = false) {
   sourceState = 'loading';
   if (force) selectedTerm = null;
   render();
+
   try {
     const publicSnap = await getDocs(collection(db, COLLECTION_NAME));
-    publicTerms = publicSnap.docs.map((d) => ({ id: d.id, ...d.data(), is_shared: true, _origin: 'public' }));
+    publicTerms = publicSnap.docs.map((d) => ({
+      id: d.id,
+      ...d.data(),
+      is_shared: true,
+      _origin: 'public'
+    }));
 
     if (currentUser) {
       try {
-        const privateSnap = await getDocs(collection(db, PRIVATE_ROOT, currentUser.uid, 'terms'));
-        privateTerms = privateSnap.docs.map((d) => ({ id: d.id, ...d.data(), _origin: 'private' }));
+        privateTerms = await listPrivateTerms(currentUser.uid);
       } catch (privateError) {
         console.warn('Private dictionary unavailable:', privateError);
         privateTerms = [];
-        const message = String(privateError?.message || privateError);
-        if (/permission|permissions|insufficient/i.test(message)) {
-          showToast('私人辭典需要發布新版 Firestore Security Rules。', true);
-        }
+        showToast('私人辭典同步失敗：' + (privateError?.message || privateError), true);
       }
     } else {
       privateTerms = [];
