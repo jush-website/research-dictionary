@@ -35,6 +35,8 @@ const desktopSessionId = (() => {
 })();
 const THEME_KEY = 'research_dictionary_theme_v1';
 const FONT_SCALE_KEY = 'research_dictionary_font_scale_v1';
+const DESKTOP_RELEASE_API = 'https://api.github.com/repos/jush-website/research-dictionary/releases/latest';
+const DESKTOP_RELEASE_FALLBACK = 'https://github.com/jush-website/research-dictionary/releases/latest';
 let currentTheme = document.documentElement.dataset.theme === 'light' ? 'light' : 'dark';
 
 const $ = (id) => document.getElementById(id);
@@ -47,7 +49,7 @@ const els = {
   termDialog:$('termDialog'), termForm:$('termForm'), closeDialog:$('closeDialog'), cancelDialog:$('cancelDialog'),
   termId:$('termId'), termEn:$('termEn'), termZh:$('termZh'), category:$('category'), status:$('status'), definition:$('definition'), simpleExplanation:$('simpleExplanation'), example:$('example'), researchNote:$('researchNote'), source:$('source'), sourceType:$('sourceType'), sourceDetail:$('sourceDetail'), isCore:$('isCore'), visibility:$('visibility'), duplicateHint:$('duplicateHint'), saveTermBtn:$('saveTermBtn'),
   detailDialog:$('detailDialog'), detailContent:$('detailContent'), toast:$('toast'), categoryList:$('categoryList'),
-  themeToggle:$('themeToggle'), fontSizeSlider:$('fontSizeSlider'), fontSizeValue:$('fontSizeValue'),
+  themeToggle:$('themeToggle'), fontSizeSlider:$('fontSizeSlider'), fontSizeValue:$('fontSizeValue'), desktopDownloadBtn:$('desktopDownloadBtn'), desktopDownloadVersion:$('desktopDownloadVersion'),
   importDialog:$('importDialog'), closeImportDialog:$('closeImportDialog'), cancelImportDialog:$('cancelImportDialog'), batchJson:$('batchJson'), batchFile:$('batchFile'), importVisibility:$('importVisibility'), analyzeImportBtn:$('analyzeImportBtn'), importSummary:$('importSummary'), importPreview:$('importPreview'), executeImportBtn:$('executeImportBtn'),
   desktopAuthBanner:$('desktopAuthBanner'), desktopAuthTitle:$('desktopAuthTitle'), desktopAuthText:$('desktopAuthText'), desktopAuthorizeBtn:$('desktopAuthorizeBtn')
 };
@@ -75,6 +77,41 @@ function setTheme(theme,{persist=true}={}){
 }
 
 function toggleTheme(){ setTheme(currentTheme==='dark'?'light':'dark'); }
+
+
+async function refreshDesktopDownload(){
+  if(!els.desktopDownloadBtn) return;
+
+  // Safe fallback: even if GitHub API is rate-limited/unavailable, the user can
+  // still open the latest Release page and download manually.
+  els.desktopDownloadBtn.href=DESKTOP_RELEASE_FALLBACK;
+
+  try{
+    const response=await fetch(DESKTOP_RELEASE_API,{
+      headers:{Accept:'application/vnd.github+json'},
+      cache:'no-store'
+    });
+    if(!response.ok) throw new Error('GitHub Release HTTP '+response.status);
+
+    const release=await response.json();
+    const setup=(release.assets||[]).find(asset=>
+      /_x64-setup\.exe$/i.test(String(asset.name||'')) &&
+      String(asset.browser_download_url||'').startsWith('https://github.com/jush-website/research-dictionary/releases/download/')
+    );
+    if(!setup) throw new Error('找不到 Windows x64 安裝檔');
+
+    els.desktopDownloadBtn.href=setup.browser_download_url;
+    els.desktopDownloadBtn.setAttribute('download',setup.name||'Research-Dictionary-Setup.exe');
+    els.desktopDownloadBtn.title='下載 Research Dictionary Desktop '+String(release.tag_name||'').replace(/^desktop-v/i,'v');
+    if(els.desktopDownloadVersion){
+      els.desktopDownloadVersion.textContent=String(release.tag_name||'').replace(/^desktop-v/i,'v');
+    }
+  }catch(error){
+    console.warn('Latest desktop release lookup failed:',error);
+    els.desktopDownloadBtn.removeAttribute('download');
+    if(els.desktopDownloadVersion) els.desktopDownloadVersion.textContent='最新版';
+  }
+}
 
 function clampFontScale(value){
   const n=Number(value);
@@ -731,6 +768,7 @@ updateThemeButton();
 initFontScale();
 setupDesktopAuthBanner();
 els.themeToggle?.addEventListener('click',toggleTheme);
+refreshDesktopDownload();
 els.fontSizeSlider?.addEventListener('input',event=>applyFontScale(event.target.value));
 
 const debouncedSearchRender=debounce(render,250);
