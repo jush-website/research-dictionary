@@ -216,6 +216,210 @@ function exactMatch(query) {
   return terms.find((term) => normalize(term.term_en) === key || normalize(term.term_zh) === key) || null;
 }
 
+function loadSavedAuthSession() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(AUTH_SESSION_KEY) || 'null');
+    if (!raw?.uid || !raw?.refreshToken) return null;
+    return raw;
+  } catch {
+    return null;
+  }
+}
+
+function persistAuthSession(session) {
+  authSession = session;
+  if (session) {
+    localStorage.setItem(AUTH_SESSION_KEY, JSON.stringify(session));
+    currentUser = {
+      uid: session.uid,
+      displayName: session.displayName || '',
+      email: session.email || ''
+    };
+  } else {
+    localStorage.removeItem(AUTH_SESSION_KEY);
+    currentUser = null;
+  }
+}
+
+async function exchangeGoogleCredentialForFirebase(data) {
+  const attempts = [];
+  if (data.googleIdToken) attempts.push('id_token=' + encodeURIComponent(data.googleIdToken) + '&providerId=google.com');
+  if (data.googleAccessToken) attempts.push('access_token=' + encodeURIComponent(data.googleAccessToken) + '&providerId=google.com');
+  if (!attempts.length) throw new Error('網站沒有回傳 Google OAuth 憑證');
+
+  let lastError = '';
+  for (const postBody of attempts) {
+    const response = await fetch(AUTH_SIGNIN_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        postBody,
+        requestUri: 'https://research-dictionary.vercel.app/',
+        returnIdpCredential: true,
+        returnSecureToken: true
+      })
+    });
+
+    const json = await response.json().catch(() => ({}));
+    if (response.ok && json.idToken && json.refreshToken && json.localId) {
+      const session = {
+        uid: json.localId,
+        displayName: json.displayName || data.displayName || '',
+        email: json.email || data.email || '',
+        idToken: json.idToken,
+        refreshToken: json.refreshToken,
+        expiresAtMs: Date.now() + (Number(json.expiresIn || 3600) * 1000) - 60000
+      };
+      persistAuthSession(session);
+      return session;
+    }
+
+    lastError = json?.error?.message || ('HTTP ' + response.status);
+  }
+
+  throw new Error('Firebase OAuth 交換失敗：' + (lastError || '未知錯誤'));
+}
+
+async function ensureFirebaseIdToken(force = false) {
+  if (!authSession) throw new Error('尚未登入');
+  if (!force && authSession.idToken && authSession.expiresAtMs > Date.now() + 60000) {
+    return authSession.idToken;
+  }
+
+  const body = new URLSearchParams({
+    grant_type: 'refresh_token',
+    refresh_token: authSession.refreshToken
+  });
+
+  const response = await fetch(AUTH_REFRESH_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body
+  });
+
+  const json = await response.json().catch(() => ({}));
+  if (!response.ok || !json.id_token) {
+    persistAuthSession(null);
+    throw new Error('登入已失效：' + (json?.error?.message || ('HTTP ' + response.status)));
+  }
+
+  authSession = {
+    ...authSession,
+    idToken: json.id_token,
+    refreshToken: json.refresh_token || authSession.refreshToken,
+    expiresAtMs: Date.now() + (Number(json.expires_in || 3600) * 1000) - 60000
+  };
+  persistAuthSession(authSession);
+  return authSession.idToken;
+}
+
+async function restoreDesktopSession() {
+  const saved = loadSavedAuthSession();
+  if (!saved) return;
+  authSession = saved;
+  currentUser = {
+    uid: saved.uid,
+    displayName: saved.displayName || '',
+    email: saved.email || ''
+  };
+  try {
+    await ensureFirebaseIdToken();
+  } catch (error) {
+    console.warn('Stored desktop auth session expired:', error);
+    persistAuthSession(null);
+  }
+}
+
+function firestoreValue(value) {
+  if (value === null || value === undefined) return { nullValue: null };
+  if (typeof value === 'boolean') return { booleanValue: value };
+  if (typeof value === 'number') {
+    return Number.isInteger(value) ? { integerValue: String(value) } : { doubleValue: value };
+  }
+  if (value instanceof Date) return { timestampValue: value.toISOString() };
+  if (typeof value === 'string') {
+    const isIsoTime = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(value);
+    return isIsoTime ? { timestampValue: value } : { stringValue: value };
+  }
+  if (Array.isArray(value)) return { arrayValue: { values: value.map(firestoreValue) } };
+  return { stringValue: String(value) };
+}
+
+function firestoreFields(obj) {
+  const fields = {};
+  for (const [key, value] of Object.entries(obj || {})) {
+    if (['id', '_origin'].includes(key) || value === undefined) continue;
+    fields[key] = firestoreValue(value);
+  }
+  return fields;
+}
+
+function fromFirestoreValue(value) {
+  if (!value) return null;
+  if ('stringValue' in value) return value.stringValue;
+  if ('booleanValue' in value) return value.booleanValue;
+  if ('integerValue' in value) return Number(value.integerValue);
+  if ('doubleValue' in value) return Number(value.doubleValue);
+  if ('timestampValue' in value) return value.timestampValue;
+  if ('nullValue' in value) return null;
+  if ('arrayValue' in value) return (value.arrayValue.values || []).map(fromFirestoreValue);
+  if ('mapValue' in value) return fromFirestoreFields(value.mapValue.fields || {});
+  return null;
+}
+
+function fromFirestoreFields(fields = {}) {
+  return Object.fromEntries(Object.entries(fields).map(([key, value]) => [key, fromFirestoreValue(value)]));
+}
+
+function encodeFirestorePath(path) {
+  return String(path).split('/').map(encodeURIComponent).join('/');
+}
+
+async function firestoreRestFetch(path, options = {}, retry = true) {
+  const token = await ensureFirebaseIdToken();
+  const response = await fetch(FIRESTORE_REST_BASE + '/' + encodeFirestorePath(path) + (options.query || ''), {
+    method: options.method || 'GET',
+    headers: {
+      Authorization: 'Bearer ' + token,
+      ...(options.body ? { 'Content-Type': 'application/json' } : {})
+    },
+    body: options.body ? JSON.stringify(options.body) : undefined
+  });
+
+  if (response.status === 401 && retry) {
+    await ensureFirebaseIdToken(true);
+    return firestoreRestFetch(path, options, false);
+  }
+
+  if (!response.ok) {
+    const json = await response.json().catch(() => ({}));
+    throw new Error(json?.error?.message || ('Firestore HTTP ' + response.status));
+  }
+
+  if (response.status === 204) return null;
+  return response.json().catch(() => null);
+}
+
+async function listPrivateTerms(uid) {
+  const json = await firestoreRestFetch(PRIVATE_ROOT + '/' + uid + '/terms', { query: '?pageSize=500' });
+  return (json?.documents || []).map((entry) => ({
+    id: entry.name.split('/').pop(),
+    ...fromFirestoreFields(entry.fields || {}),
+    _origin: 'private'
+  }));
+}
+
+async function restSetDocument(path, data) {
+  return firestoreRestFetch(path, {
+    method: 'PATCH',
+    body: { fields: firestoreFields(data) }
+  });
+}
+
+async function restDeleteDocument(path) {
+  return firestoreRestFetch(path, { method: 'DELETE' });
+}
+
 function loadShortcutConfig() {
   try {
     const saved = JSON.parse(localStorage.getItem(SHORTCUT_KEY) || 'null');
