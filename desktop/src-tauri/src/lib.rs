@@ -1,7 +1,6 @@
 use std::{
     fs,
     process::Command,
-    thread,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
@@ -20,67 +19,9 @@ const RELEASE_API: &str =
 const RELEASE_DOWNLOAD_PREFIX: &str =
     "https://github.com/jush-website/research-dictionary/releases/download/";
 
-#[tauri::command]
-fn capture_selected_text() -> Result<String, String> {
-    #[cfg(not(target_os = "windows"))]
-    {
-        return Err("目前選取文字快速查詢僅支援 Windows。".to_string());
-    }
-
-    #[cfg(target_os = "windows")]
-    {
-        use enigo::{
-            Direction::{Click, Press, Release},
-            Enigo, Key, Keyboard, Settings,
-        };
-
-        let mut clipboard =
-            arboard::Clipboard::new().map_err(|e| format!("無法存取剪貼簿：{e}"))?;
-        let previous_text = clipboard.get_text().ok();
-        let marker = format!(
-            "__RD_CAPTURE_{}__",
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_nanos()
-        );
-        clipboard
-            .set_text(marker.clone())
-            .map_err(|e| format!("無法準備剪貼簿：{e}"))?;
-        drop(clipboard);
-
-        thread::sleep(Duration::from_millis(100));
-
-        let mut enigo =
-            Enigo::new(&Settings::default()).map_err(|e| format!("無法建立鍵盤模擬器：{e}"))?;
-        enigo
-            .key(Key::Control, Press)
-            .map_err(|e| e.to_string())?;
-        enigo
-            .key(Key::Unicode('c'), Click)
-            .map_err(|e| e.to_string())?;
-        enigo
-            .key(Key::Control, Release)
-            .map_err(|e| e.to_string())?;
-
-        thread::sleep(Duration::from_millis(200));
-        let mut clipboard =
-            arboard::Clipboard::new().map_err(|e| format!("無法讀取剪貼簿：{e}"))?;
-        let captured = clipboard.get_text().unwrap_or_default();
-
-        if let Some(old) = previous_text {
-            let _ = clipboard.set_text(old);
-        } else {
-            let _ = clipboard.set_text(String::new());
-        }
-
-        if captured == marker {
-            Ok(String::new())
-        } else {
-            Ok(captured.trim().to_string())
-        }
-    }
-}
+mod capture;
+mod shortcuts;
+use capture::capture_selected_text;
 
 #[tauri::command]
 fn open_research_website(app: tauri::AppHandle) -> Result<(), String> {
@@ -362,6 +303,9 @@ mod tests {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _, _| {
+            let _ = shortcuts::show_main_window(app);
+        }))
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
@@ -369,7 +313,7 @@ pub fn run() {
         ))
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
-            capture_selected_text,
+            shortcuts::configure_shortcuts,
             open_research_website,
             open_desktop_login_url,
             check_for_update,

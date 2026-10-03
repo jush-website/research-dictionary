@@ -1,7 +1,7 @@
 [package]
-# Release CI retry marker for v0.5.10
+# Release CI retry marker for v0.5.11
 name = "research-dictionary-desktop"
-version = "0.5.10"
+version = "0.5.11"
 description = "Windows quick lookup companion for Research Dictionary"
 authors = ["Jush"]
 edition = "2021"
@@ -16,6 +16,7 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 tauri = { version = "2", features = ["tray-icon", "image-ico", "image-png"] }
 tauri-plugin-global-shortcut = "2"
+tauri-plugin-single-instance = "2"
 tauri-plugin-autostart = "2"
 tauri-plugin-opener = "2"
 arboard = "3.4"
@@ -24,3 +25,6 @@ enigo = "0.6"
 serde = { version = "1", features = ["derive"] }
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
 sha2 = "0.10"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_System_DataExchange", "Win32_UI_Input_KeyboardAndMouse"] }

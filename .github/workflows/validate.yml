@@ -1,0 +1,28 @@
+name: Validate Web and Desktop
+on:
+  push:
+    branches: ['**']
+  pull_request:
+jobs:
+  regressions:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: node --check web/app.js
+      - run: node --check desktop/src/main.js
+      - run: node --test tests/regressions.test.mjs
+      - run: npm install
+        working-directory: desktop
+      - run: npm run build
+        working-directory: desktop
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './desktop/src-tauri -> target'
+      - run: cargo test --lib
+        working-directory: desktop/src-tauri
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
